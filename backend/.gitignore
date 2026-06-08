@@ -1,0 +1,16 @@
+.env
+config/config.yaml
+static/upload/
+.vite/
+package-lock.json
+
+# Binaries
+*.exe
+server-linux
+server-linux2
+cmd/server/server
+cmd/wsbench/wsbench
+auction-server
+
+# Redis dump
+dump.rdb

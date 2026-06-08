@@ -1,0 +1,28 @@
+server:
+  port: 8080
+  mode: debug
+
+db:
+  host: 127.0.0.1
+  port: 3306
+  user: root
+  password: your-db-password
+  database: auction
+  charset: utf8mb4
+  max_idle_conns: 10
+  max_open_conns: 100
+
+redis:
+  host: 127.0.0.1
+  port: 6379
+  password: ""
+  db: 0
+  pool_size: 100
+
+jwt:
+  secret: change-me-to-a-random-string
+  expire_hours: 24
+
+log:
+  level: debug
+  file: ""
