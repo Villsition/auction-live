@@ -39,3 +39,7 @@ ALTER TABLE `live_rooms`
 -- watcher 到期扫描性能优化：复合索引覆盖 status + planned_end_time
 ALTER TABLE `auction_sessions`
   ADD INDEX `idx_status_end` (`status`, `planned_end_time`);
+
+-- 视频拉流地址
+ALTER TABLE `live_rooms`
+  ADD COLUMN `pull_url` VARCHAR(512) NOT NULL DEFAULT '' COMMENT '拉流地址' AFTER `stream_url`;

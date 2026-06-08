@@ -27,6 +27,7 @@ export interface LiveRoom {
   title: string;
   cover_image: string;
   stream_url: string;
+  pull_url?: string;
   status: number; // 0=offline 1=live 2=ended
   online_count: number;
   total_likes?: number;

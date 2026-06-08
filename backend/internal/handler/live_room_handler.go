@@ -16,6 +16,11 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+const (
+	pushDomain = "push.auction-in-live.top"
+	pullDomain = "pull.auction-in-live.top"
+)
+
 type LiveRoomHandler struct {
 	svc               *service.LiveRoomSvc
 	rdb               *redisPkg.Client
@@ -172,9 +177,15 @@ func (h *LiveRoomHandler) StartLive(c *gin.Context) {
 	}
 
 	now := time.Now()
+	streamKey := fmt.Sprintf("live_%d", id)
+	streamURL := fmt.Sprintf("rtmp://%s/live/%s", pushDomain, streamKey)
+	pullURL := fmt.Sprintf("https://%s/live/%s.m3u8", pullDomain, streamKey)
+
 	updates := map[string]any{
 		"status":     model.LiveRoomStatusLive,
 		"started_at": now,
+		"stream_url": streamURL,
+		"pull_url":   pullURL,
 	}
 	if err := h.svc.Update(c.Request.Context(), id, updates); err != nil {
 		response.Error(c, errcode.ErrDatabase, err.Error())
@@ -183,6 +194,8 @@ func (h *LiveRoomHandler) StartLive(c *gin.Context) {
 
 	room.Status = model.LiveRoomStatusLive
 	room.StartedAt = &now
+	room.StreamURL = streamURL
+	room.PullURL = pullURL
 	response.Success(c, room)
 }
 

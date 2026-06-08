@@ -117,13 +117,22 @@ export default function SellerLiveRooms() {
                     ID: {room.id} · 在线: {room.online_count || 0} 人 · 点赞: {room.total_likes || 0}
                   </div>
                 </div>
-                <span style={{
-                  padding: '4px 12px', borderRadius: 20, fontSize: 12, fontWeight: 'bold',
-                  background: st.color === '#e53e3e' ? '#fff5f5' : '#f7fafc',
-                  color: st.color, marginRight: 12,
-                }}>
-                  {st.label}
-                </span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <span style={{
+                    padding: '4px 12px', borderRadius: 20, fontSize: 12, fontWeight: 'bold',
+                    background: st.color === '#e53e3e' ? '#fff5f5' : '#f7fafc',
+                    color: st.color, marginRight: 4,
+                  }}>
+                    {st.label}
+                  </span>
+                  {room.status === 1 && room.stream_url && (
+                    <code style={{
+                      fontSize: 11, color: '#6366f1', background: '#eef2ff',
+                      padding: '3px 8px', borderRadius: 6, maxWidth: 240,
+                      overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                    }} title={room.stream_url}>{room.stream_url}</code>
+                  )}
+                </div>
                 <div style={{ display: 'flex', gap: 8 }}>
                   {(room.status === 0 || room.status === 2) && (
                     <button onClick={() => handleStartClick(room)}

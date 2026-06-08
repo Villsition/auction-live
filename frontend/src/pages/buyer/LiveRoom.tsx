@@ -5,6 +5,7 @@ import { useWebSocket } from '../../hooks/useWebSocket';
 import { publicApi, buyer as buyerApi } from '../../api';
 import Countdown from '../../components/Countdown';
 import RankingList from '../../components/RankingList';
+import Hls from 'hls.js';
 import type { RoomAuction, RankItem, WSBidEvent, WSAuctionEvent, WSOutbidEvent } from '../../types';
 
 interface Comment {
@@ -53,6 +54,7 @@ export default function BuyerLiveRoom() {
   const [onlineCount, setOnlineCount] = useState(0);
   const [viewers, setViewers] = useState<{user_id: number; nickname: string; avatar: string}[]>([]);
   const [error, setError] = useState('');
+  const videoRef = useRef<HTMLVideoElement>(null);
 
   const API_HOST = '';
   const fmt = (s?: string) => (s ? (s.endsWith('.00') ? s.slice(0, -3) : s.includes('.') ? s.replace(/0+$/, '').replace(/\.$/, '') : s) : '0');
@@ -118,6 +120,34 @@ export default function BuyerLiveRoom() {
     loadProducts();
     seenCommentIds.current.clear();
   }, [loadAuction]);
+
+  // Initialize HLS video player
+  useEffect(() => {
+    const video = videoRef.current;
+    const pullUrl = data?.live_room?.pull_url;
+    if (!video || !pullUrl) return;
+
+    let hls: Hls | null = null;
+
+    if (Hls.isSupported()) {
+      hls = new Hls();
+      hls.loadSource(pullUrl);
+      hls.attachMedia(video);
+      hls.on(Hls.Events.MANIFEST_PARSED, () => {
+        video.play().catch(() => {});
+      });
+    } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
+      // Native HLS support (Safari)
+      video.src = pullUrl;
+      video.addEventListener('loadedmetadata', () => {
+        video.play().catch(() => {});
+      });
+    }
+
+    return () => {
+      if (hls) hls.destroy();
+    };
+  }, [data?.live_room?.pull_url]);
 
   // Poll ranking every 3s — keep last data when polling stops
   useEffect(() => {
@@ -441,6 +471,7 @@ export default function BuyerLiveRoom() {
   const [liveEnded, setLiveEnded] = useState(false);
   const [showEndLiveModal, setShowEndLiveModal] = useState(false);
   const [endingLive, setEndingLive] = useState(false);
+  const [showStreamInfo, setShowStreamInfo] = useState(false);
 
   const handleEndLive = async () => {
     if (!token) return;
@@ -679,16 +710,34 @@ export default function BuyerLiveRoom() {
             justifyContent: 'center', color: '#fff', position: 'relative', minHeight: 0,
           }}
         >
+          {/* Video Background */}
+          <video
+            ref={videoRef}
+            muted
+            autoPlay
+            playsInline
+            loop
+            style={{
+              position: 'absolute', inset: 0, width: '100%', height: '100%',
+              objectFit: 'cover', background: '#0f0f23',
+            }}
+          />
           {/* ===== TOP-LEFT: Pill: ‹ | avatar | name / 本场点赞 N ===== */}
           <div style={{
             position: 'absolute', top: 12, left: 12, zIndex: 10,
             display: 'flex', alignItems: 'center', gap: 6,
           }}>
             {isOwnRoom && data?.live_room?.status === 1 && (
-              <button onClick={() => setShowEndLiveModal(true)} style={{
-                background: 'rgba(229,62,62,0.85)', color: '#fff', border: 'none',
-                borderRadius: 20, padding: '6px 14px', fontSize: 13, cursor: 'pointer',
-              }}>⏹ 结束</button>
+              <>
+                <button onClick={() => setShowStreamInfo(true)} style={{
+                  background: 'rgba(99,102,241,0.85)', color: '#fff', border: 'none',
+                  borderRadius: 20, padding: '6px 14px', fontSize: 13, cursor: 'pointer',
+                }}>📡 推流</button>
+                <button onClick={() => setShowEndLiveModal(true)} style={{
+                  background: 'rgba(229,62,62,0.85)', color: '#fff', border: 'none',
+                  borderRadius: 20, padding: '6px 14px', fontSize: 13, cursor: 'pointer',
+                }}>⏹ 结束</button>
+              </>
             )}
             <button onClick={() => navigate('/')} style={{
               background: 'rgba(0,0,0,0.4)', color: '#fff', border: 'none',
@@ -1466,6 +1515,87 @@ export default function BuyerLiveRoom() {
             {endedModalData.winnerId === user?.id && (
               <button onClick={()=>setShowEndedModal(false)} style={{margin:'20px auto 0',width:40,height:40,borderRadius:'50%',border:'1px solid #d1d5db',background:'transparent',color:'#6b7280',fontSize:18,cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center'}}>✕</button>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* ==================== Stream Info Modal ==================== */}
+      {showStreamInfo && (
+        <div style={{
+          position: 'fixed', inset: 0, zIndex: 600,
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(4px)',
+        }} onClick={() => setShowStreamInfo(false)}>
+          <div style={{
+            background: 'rgba(15,15,40,0.98)', backdropFilter: 'blur(20px)',
+            borderRadius: 16, padding: '28px 32px',
+            border: '1px solid rgba(255,255,255,0.08)',
+            maxWidth: 480, animation: 'cardIn 0.3s ease-out',
+          }} onClick={e => e.stopPropagation()}>
+            <div style={{ fontSize: 18, fontWeight: 700, color: '#e2e8f0', marginBottom: 6 }}>
+              📡 OBS 推流配置
+            </div>
+            <div style={{ fontSize: 13, color: 'rgba(148,163,184,0.5)', marginBottom: 20 }}>
+              将以下信息填入 OBS 或其他推流软件
+            </div>
+            {/* Server + Stream Key */}
+            <div style={{ marginBottom: 14 }}>
+              <div style={{ fontSize: 12, color: 'rgba(148,163,184,0.5)', marginBottom: 4 }}>服务器地址</div>
+              <div style={{
+                display: 'flex', alignItems: 'center', gap: 8,
+                background: 'rgba(255,255,255,0.04)', borderRadius: 8,
+                padding: '10px 14px', border: '1px solid rgba(255,255,255,0.08)',
+              }}>
+                <code style={{ flex: 1, fontSize: 13, color: '#e2e8f0', wordBreak: 'break-all', fontFamily: 'monospace' }}>
+                  {data?.live_room?.stream_url?.replace(/\/live\/live_\d+$/, '/live') || `rtmp://push.auction-in-live.top/live/`}
+                </code>
+                <button onClick={() => navigator.clipboard.writeText(data?.live_room?.stream_url?.replace(/\/live\/live_\d+$/, '/live') || `rtmp://push.auction-in-live.top/live/`)} style={{
+                  background: 'rgba(99,102,241,0.2)', color: '#818cf8', border: 'none',
+                  borderRadius: 6, padding: '4px 10px', fontSize: 12, cursor: 'pointer',
+                  whiteSpace: 'nowrap',
+                }}>复制</button>
+              </div>
+            </div>
+            <div style={{ marginBottom: 20 }}>
+              <div style={{ fontSize: 12, color: 'rgba(148,163,184,0.5)', marginBottom: 4 }}>串流密钥</div>
+              <div style={{
+                display: 'flex', alignItems: 'center', gap: 8,
+                background: 'rgba(255,255,255,0.04)', borderRadius: 8,
+                padding: '10px 14px', border: '1px solid rgba(255,255,255,0.08)',
+              }}>
+                <code style={{ flex: 1, fontSize: 13, color: '#fbbf24', fontFamily: 'monospace' }}>
+                  live_{data?.live_room?.id || rid}
+                </code>
+                <button onClick={() => navigator.clipboard.writeText(`live_${data?.live_room?.id || rid}`)} style={{
+                  background: 'rgba(99,102,241,0.2)', color: '#818cf8', border: 'none',
+                  borderRadius: 6, padding: '4px 10px', fontSize: 12, cursor: 'pointer',
+                  whiteSpace: 'nowrap',
+                }}>复制</button>
+              </div>
+            </div>
+            {/* Pull URL */}
+            <div style={{ marginBottom: 20 }}>
+              <div style={{ fontSize: 12, color: 'rgba(148,163,184,0.5)', marginBottom: 4 }}>拉流地址（观众端播放）</div>
+              <div style={{
+                background: 'rgba(255,255,255,0.04)', borderRadius: 8,
+                padding: '10px 14px', border: '1px solid rgba(255,255,255,0.08)',
+                display: 'flex', alignItems: 'center', gap: 8,
+              }}>
+                <code style={{ flex: 1, fontSize: 12, color: 'rgba(148,163,184,0.7)', wordBreak: 'break-all', fontFamily: 'monospace' }}>
+                  {data?.live_room?.pull_url || `https://pull.auction-in-live.top/live/live_${rid}.m3u8`}
+                </code>
+                <button onClick={() => navigator.clipboard.writeText(data?.live_room?.pull_url || `https://pull.auction-in-live.top/live/live_${rid}.m3u8`)} style={{
+                  background: 'rgba(99,102,241,0.2)', color: '#818cf8', border: 'none',
+                  borderRadius: 6, padding: '4px 10px', fontSize: 12, cursor: 'pointer',
+                  whiteSpace: 'nowrap',
+                }}>复制</button>
+              </div>
+            </div>
+            <button onClick={() => setShowStreamInfo(false)} style={{
+              width: '100%', padding: '10px 0', background: 'rgba(255,255,255,0.06)',
+              color: 'rgba(226,232,240,0.6)', border: '1px solid rgba(255,255,255,0.08)',
+              borderRadius: 10, fontSize: 14, cursor: 'pointer',
+            }}>关闭</button>
           </div>
         </div>
       )}
