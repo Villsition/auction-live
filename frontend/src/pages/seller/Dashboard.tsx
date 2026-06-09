@@ -19,6 +19,8 @@ export default function Dashboard() {
   const [title, setTitle] = useState('');
   const [startRoom, setStartRoom] = useState<LiveRoom | null>(null);
   const [startTitle, setStartTitle] = useState('');
+  const [bgVideoUrl, setBgVideoUrl] = useState('');
+  const [uploadingVideo, setUploadingVideo] = useState(false);
   const [selectProducts, setSelectProducts] = useState<any[]>([]);
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [loadingProducts, setLoadingProducts] = useState(false);
@@ -51,7 +53,7 @@ export default function Dashboard() {
     if (!token || !startRoom || !startTitle.trim()) return;
     if (selectedIds.size === 0) { alert('请至少选择一件商品'); return; }
     try {
-      await fetch(`/api/seller/live-rooms/${startRoom.id}`, { method:'PUT', headers:{'Content-Type':'application/json', Authorization:`Bearer ${token}`}, body:JSON.stringify({title:startTitle.trim()}) });
+      await fetch(`/api/seller/live-rooms/${startRoom.id}`, { method:'PUT', headers:{'Content-Type':'application/json', Authorization:`Bearer ${token}`}, body:JSON.stringify({title:startTitle.trim(), bg_video: bgVideoUrl}) });
       await seller.startLive(startRoom.id, token);
       const sorted = selectProducts.filter((p:any) => selectedIds.has(p.id));
       for (let i=0; i<sorted.length; i++) {
@@ -64,10 +66,19 @@ export default function Dashboard() {
     } catch (err: any) { alert(err.message); }
   };
 
+  const handleVideoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]; if (!file || !token) return;
+    setUploadingVideo(true);
+    try { const url = await seller.uploadVideo(file, token); setBgVideoUrl(url); }
+    catch (err: any) { alert('视频上传失败: ' + err.message); }
+    setUploadingVideo(false);
+  };
+
   const openStart = async (room: LiveRoom) => {
     setStartRoom(room); setStartTitle(room.title||''); setSelectedIds(new Set());
+    setBgVideoUrl(room.bg_video || '');
     setLoadingProducts(true);
-    try { const data = await seller.listProducts('page=1&page_size=50', token!); setSelectProducts((data.list||[]).filter((p:any)=>p.status!==5)); }
+    try { const data = await seller.listProducts('page=1&page_size=50', token!); setSelectProducts((data.list||[]).filter((p:any)=>p.status===1)); }
     catch { setSelectProducts([]); }
     setLoadingProducts(false);
   };
@@ -176,6 +187,23 @@ export default function Dashboard() {
           <div style={{ background:'rgba(15,15,40,0.98)', backdropFilter:'blur(20px)', padding:28, borderRadius:20, width:500, maxHeight:'80vh', overflow:'auto', border:'1px solid rgba(255,255,255,0.08)', animation:'fadeIn 0.3s ease-out' }}>
             <h2 style={{ marginTop:0, fontWeight:700, background:'linear-gradient(135deg,#e2e8f0,#a5b4fc)', WebkitBackgroundClip:'text', WebkitTextFillColor:'transparent' }}>🔴 开启直播</h2>
             <input placeholder="直播标题" value={startTitle} onChange={e=>setStartTitle(e.target.value)} autoFocus style={{ display:'block', width:'100%', padding:'12px 16px', background:'rgba(255,255,255,0.04)', border:'1px solid rgba(255,255,255,0.08)', borderRadius:10, fontSize:15, color:'#e2e8f0', outline:'none', fontFamily:'inherit', boxSizing:'border-box', marginBottom:14 }} />
+            {/* Background video */}
+            <div style={{ marginBottom:14 }}>
+              <div style={{ fontSize:13, color:'rgba(148,163,184,0.5)', marginBottom:6 }}>直播背景视频</div>
+              <label style={{
+                display:'flex', alignItems:'center', gap:8,
+                padding:'10px 14px', borderRadius:10, cursor:'pointer',
+                background:'rgba(255,255,255,0.04)', border:'1px dashed rgba(255,255,255,0.1)',
+                color: bgVideoUrl?'#34d399':'rgba(148,163,184,0.5)', fontSize:13, transition:'all 0.2s',
+              }}
+                onMouseEnter={e=>{e.currentTarget.style.borderColor='rgba(99,102,241,0.4)';e.currentTarget.style.color='#a5b4fc'}}
+                onMouseLeave={e=>{e.currentTarget.style.borderColor='rgba(255,255,255,0.1)';e.currentTarget.style.color=bgVideoUrl?'#34d399':'rgba(148,163,184,0.5)'}}
+              >
+                <span style={{ fontSize:16 }}>🎬</span>
+                {uploadingVideo ? '上传中...' : bgVideoUrl ? '✅ 已选择背景视频' : '点击上传背景视频（可选）'}
+                <input type="file" accept="video/mp4,video/webm" onChange={handleVideoUpload} style={{ display:'none' }} />
+              </label>
+            </div>
             <div style={{ fontSize:14, fontWeight:600, marginBottom:10, color:'rgba(226,232,240,0.7)' }}>选择本场竞拍商品 ({selectedIds.size} 已选)</div>
             {loadingProducts ? <div style={{ textAlign:'center', padding:20, color:'rgba(148,163,184,0.4)' }}>加载商品中...</div>
             : selectProducts.length===0 ? <div style={{ textAlign:'center', padding:20, color:'rgba(148,163,184,0.4)' }}>暂无商品</div>

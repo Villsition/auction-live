@@ -25,6 +25,13 @@ func (h *ProductHandler) Create(c *gin.Context) {
 		response.Error(c, errcode.ErrInvalidParam, err.Error())
 		return
 	}
+	// Validate: ceiling_price must be >= start_price (0 = no ceiling)
+	cp, _ := strconv.ParseFloat(p.CeilingPrice, 64)
+	sp, _ := strconv.ParseFloat(p.StartPrice, 64)
+	if cp > 0 && cp <= sp {
+		response.Error(c, errcode.ErrInvalidParam, "封顶价不能低于起拍价")
+		return
+	}
 	if err := h.svc.Create(c.Request.Context(), &p); err != nil {
 		response.Error(c, errcode.ErrDatabase, err.Error())
 		return
@@ -57,6 +64,17 @@ func (h *ProductHandler) Update(c *gin.Context) {
 		response.Error(c, errcode.ErrInvalidParam, err.Error())
 		return
 	}
+	// Validate: if both ceiling_price and start_price are provided, ceiling >= start
+	if cpRaw, ok := updates["ceiling_price"]; ok {
+		cp, _ := strconv.ParseFloat(asString(cpRaw), 64)
+		if spRaw, ok2 := updates["start_price"]; ok2 {
+			sp, _ := strconv.ParseFloat(asString(spRaw), 64)
+			if cp > 0 && cp <= sp {
+				response.Error(c, errcode.ErrInvalidParam, "封顶价不能低于起拍价")
+				return
+			}
+		}
+	}
 	if err := h.svc.Update(c.Request.Context(), id, updates); err != nil {
 		response.Error(c, errcode.ErrDatabase, err.Error())
 		return
@@ -79,4 +97,16 @@ func (h *ProductHandler) List(c *gin.Context) {
 	response.SuccessPage(c, model.PageResult[model.Product]{
 		List: products, Total: total, Page: page.Page, PageSize: page.PageSize,
 	})
+}
+
+// asString converts any value from JSON unmarshal to string.
+func asString(v any) string {
+	switch s := v.(type) {
+	case string:
+		return s
+	case float64:
+		return strconv.FormatFloat(s, 'f', -1, 64)
+	default:
+		return ""
+	}
 }

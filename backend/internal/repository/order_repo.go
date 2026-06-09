@@ -87,9 +87,10 @@ func (r *OrderRepo) ListByBuyerWithDetails(ctx context.Context, buyerID uint64, 
 	var total int64
 
 	db := r.DB.WithContext(ctx).Table("orders").
-		Select("orders.*, products.title AS product_title, COALESCE(products.cover_image,'') AS product_image, users.nickname AS buyer_nickname, COALESCE(users.avatar,'') AS buyer_avatar").
+		Select("orders.*, products.title AS product_title, COALESCE(products.cover_image,'') AS product_image, auction_sessions.start_time AS auction_start, users.nickname AS buyer_nickname, COALESCE(users.avatar,'') AS buyer_avatar").
 		Joins("LEFT JOIN products ON products.id = orders.product_id").
 		Joins("LEFT JOIN users ON users.id = orders.buyer_id").
+		Joins("LEFT JOIN auction_sessions ON auction_sessions.id = orders.auction_id").
 		Where("orders.buyer_id = ?", buyerID)
 
 	db.Count(&total)
@@ -113,9 +114,10 @@ func (r *OrderRepo) ListBySellerWithDetails(ctx context.Context, sellerID uint64
 	var total int64
 
 	db := r.DB.WithContext(ctx).Table("orders").
-		Select("orders.*, products.title AS product_title, COALESCE(products.cover_image,'') AS product_image, users.nickname AS buyer_nickname, COALESCE(users.avatar,'') AS buyer_avatar").
+		Select("orders.*, products.title AS product_title, COALESCE(products.cover_image,'') AS product_image, auction_sessions.start_time AS auction_start, users.nickname AS buyer_nickname, COALESCE(users.avatar,'') AS buyer_avatar").
 		Joins("LEFT JOIN products ON products.id = orders.product_id").
 		Joins("LEFT JOIN users ON users.id = orders.buyer_id").
+		Joins("LEFT JOIN auction_sessions ON auction_sessions.id = orders.auction_id").
 		Where("orders.seller_id = ?", sellerID)
 
 	if len(statusFilter) > 0 {

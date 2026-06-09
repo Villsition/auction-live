@@ -117,6 +117,18 @@ export const seller = {
     post<AuctionSession>(`/seller/auction-sessions/${id}/start`, {}, token),
   cancelAuction: (id: number, reason: string, token: string) =>
     post(`/seller/auction-sessions/${id}/cancel`, { reason }, token),
+  uploadVideo: async (file: File, token: string): Promise<string> => {
+    const form = new FormData();
+    form.append('file', file);
+    const res = await fetch(BASE + '/upload/video', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}` },
+      body: form,
+    });
+    const json = await res.json();
+    if (json.code !== 0) throw new Error(json.message);
+    return json.data.url;
+  },
   uploadImage: async (file: File, token: string): Promise<string> => {
     const form = new FormData();
     form.append('file', file);

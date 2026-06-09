@@ -43,3 +43,7 @@ ALTER TABLE `auction_sessions`
 -- 视频拉流地址
 ALTER TABLE `live_rooms`
   ADD COLUMN `pull_url` VARCHAR(512) NOT NULL DEFAULT '' COMMENT '拉流地址' AFTER `stream_url`;
+
+-- 背景视频
+ALTER TABLE `live_rooms`
+  ADD COLUMN `bg_video` VARCHAR(512) NOT NULL DEFAULT '' COMMENT '背景视频' AFTER `pull_url`;

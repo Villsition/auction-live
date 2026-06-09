@@ -105,7 +105,7 @@ func (r *AuctionSessionRepo) FinalizeAuction(ctx context.Context, auctionID uint
 		}
 	} else if status == model.AuctionStatusUnsold {
 		if err := tx.Model(&model.Product{}).Where("id = ?", session.ProductID).
-			Update("status", model.ProductStatusUnsold).Error; err != nil {
+			Update("status", model.ProductStatusListed).Error; err != nil {
 			tx.Rollback()
 			return err
 		}
@@ -153,7 +153,7 @@ func (r *AuctionSessionRepo) FinalizeWithOrder(ctx context.Context, auctionID ui
 		}
 	} else if status == model.AuctionStatusUnsold {
 		if err := tx.Model(&model.Product{}).Where("id = ?", session.ProductID).
-			Update("status", model.ProductStatusUnsold).Error; err != nil {
+			Update("status", model.ProductStatusListed).Error; err != nil {
 			tx.Rollback()
 			return err
 		}

@@ -46,6 +46,13 @@ func (h *LiveRoomHandler) GetByID(c *gin.Context) {
 		response.Error(c, errcode.ErrNotFound, "room not found")
 		return
 	}
+	// Enrich with real-time online count from Redis
+	if room.Status == model.LiveRoomStatusLive {
+		key := fmt.Sprintf("auction:%d:viewers", room.ID)
+		if count, err := h.rdb.SCard(c.Request.Context(), key).Result(); err == nil {
+			room.OnlineCount = uint(count)
+		}
+	}
 	response.Success(c, room)
 }
 

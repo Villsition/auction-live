@@ -5,7 +5,6 @@ import { useWebSocket } from '../../hooks/useWebSocket';
 import { publicApi, buyer as buyerApi } from '../../api';
 import Countdown from '../../components/Countdown';
 import RankingList from '../../components/RankingList';
-import Hls from 'hls.js';
 import type { RoomAuction, RankItem, WSBidEvent, WSAuctionEvent, WSOutbidEvent } from '../../types';
 
 interface Comment {
@@ -55,16 +54,51 @@ export default function BuyerLiveRoom() {
   const [viewers, setViewers] = useState<{user_id: number; nickname: string; avatar: string}[]>([]);
   const [error, setError] = useState('');
   const videoRef = useRef<HTMLVideoElement>(null);
+  const seededOnlineRef = useRef(false);
 
   const API_HOST = '';
   const fmt = (s?: string) => (s ? (s.endsWith('.00') ? s.slice(0, -3) : s.includes('.') ? s.replace(/0+$/, '').replace(/\.$/, '') : s) : '0');
+
+  // Coin drop sound — Alipay-style ascending chime
+  const playCoinSound = () => {
+    try {
+      const ctx = new AudioContext();
+      const t0 = ctx.currentTime;
+      // 4 ascending bell-like tones: short → longer, low → high
+      const notes = [
+        { f: 880,  t: 0,    d: 0.10 },
+        { f: 1100, t: 0.08, d: 0.11 },
+        { f: 1400, t: 0.17, d: 0.13 },
+        { f: 1800, t: 0.28, d: 0.24 },
+      ];
+      notes.forEach(({ f, t, d }) => {
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = 'sine';
+        osc.frequency.value = f;
+        const T = t0 + t;
+        gain.gain.setValueAtTime(0.01, T);
+        gain.gain.exponentialRampToValueAtTime(0.22, T + 0.01);
+        gain.gain.exponentialRampToValueAtTime(0.001, T + d);
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.start(T);
+        osc.stop(T + d + 0.01);
+      });
+    } catch { /* ignore */ }
+  };
 
   // Load auction data
   const loadAuction = useCallback(async () => {
     try {
       const d = await publicApi.roomAuction(rid);
       setData(d);
-      setOnlineCount(d.live_room?.online_count || 0);
+      // Seed initial online count from API, then WS events override it
+      // Seed online count once from API, then WS events are authoritative
+      if (!seededOnlineRef.current) {
+        seededOnlineRef.current = true;
+        setOnlineCount(d.live_room?.online_count || 0);
+      }
       // If auction already ended, capture the ended product for the card
       if (d.auction_session && d.auction_session.status >= 2 && d.product) {
         showEndedProduct({...d.product, status: d.auction_session.status});
@@ -112,7 +146,8 @@ export default function BuyerLiveRoom() {
     style.id = 'cmt-slide-css';
     style.textContent = `@keyframes cmtUp{from{opacity:0;transform:translateY(24px)}to{opacity:1;transform:translateY(0)}}.cmt-slide{animation:cmtUp .5s ease-out both}`;
     document.head.appendChild(style);
-  }, []);
+
+	}, []);
 
   // Initial load — reset comment tracking when room changes
   useEffect(() => {
@@ -121,33 +156,11 @@ export default function BuyerLiveRoom() {
     seenCommentIds.current.clear();
   }, [loadAuction]);
 
-  // Initialize HLS video player
+  // Update video volume on mount
   useEffect(() => {
     const video = videoRef.current;
-    const pullUrl = data?.live_room?.pull_url;
-    if (!video || !pullUrl) return;
-
-    let hls: Hls | null = null;
-
-    if (Hls.isSupported()) {
-      hls = new Hls();
-      hls.loadSource(pullUrl);
-      hls.attachMedia(video);
-      hls.on(Hls.Events.MANIFEST_PARSED, () => {
-        video.play().catch(() => {});
-      });
-    } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
-      // Native HLS support (Safari)
-      video.src = pullUrl;
-      video.addEventListener('loadedmetadata', () => {
-        video.play().catch(() => {});
-      });
-    }
-
-    return () => {
-      if (hls) hls.destroy();
-    };
-  }, [data?.live_room?.pull_url]);
+    if (video) video.volume = 0.3;
+  }, []);
 
   // Poll ranking every 3s — keep last data when polling stops
   useEffect(() => {
@@ -189,7 +202,7 @@ export default function BuyerLiveRoom() {
         const cur = dataRef.current;
         if (d.auction_id === cur?.auction_session?.id && d.new_end_time_ms > 0) {
           const inc = cur?.auction_session?.bid_increment || '10';
-          setData(prev => prev ? { ...prev, end_timestamp_ms: d.new_end_time_ms, current_price: d.amount, bid_count: d.bid_count } : prev);
+          setData(prev => prev ? { ...prev, end_timestamp_ms: d.new_end_time_ms, server_time_ms: d.server_time_ms || Date.now(), current_price: d.amount, bid_count: d.bid_count } : prev);
           setAmount(String(Number(d.amount) + Number(inc)));
           const sec = cur?.auction_session?.delay_seconds || 30;
           showCenterMsg(`+${sec}s`, 'delay');
@@ -205,11 +218,11 @@ export default function BuyerLiveRoom() {
                 ...prev,
                 current_price: e.amount,
                 bid_count: e.bid_count,
+                server_time_ms: e.server_time_ms || prev.server_time_ms,
                 auction_session: prev.auction_session ? { ...prev.auction_session, status: 2 } : prev.auction_session,
               } : prev);
-              setToast('🔨 封顶价成交！');
             } else {
-              setData(prev => prev ? { ...prev, current_price: e.amount, bid_count: e.bid_count } : prev);
+              setData(prev => prev ? { ...prev, current_price: e.amount, bid_count: e.bid_count, server_time_ms: e.server_time_ms || prev.server_time_ms } : prev);
               const inc = cur?.auction_session?.bid_increment || '10';
               setAmount(String(Number(e.amount) + Number(inc)));
             }
@@ -222,6 +235,8 @@ export default function BuyerLiveRoom() {
         },
       ].flatMap(fn => [subscribe('bid', fn), subscribe('ceiling_deal', fn)]),
       subscribe('auction_start', () => {
+        setRanking([]);
+        setMyBid(null);
         loadAuction();
         loadProducts();
       }),
@@ -237,15 +252,20 @@ export default function BuyerLiveRoom() {
         const cur = dataRef.current;
         if (e.auction_id === cur?.auction_session?.id) {
           setPolling(false);
-          if (cur?.product) showEndedProduct({...cur.product, status: 2});
+          // Freeze ranking immediately — set before loadAuction clears anything
+          const frozen = [...rankingRef.current];
+          if (frozen.length > 0) setRanking(frozen);
+          if (myBidRef.current) setMyBid({...myBidRef.current});
+          if (cur?.product) showEndedProduct({...cur.product, status: e.status === 'sold' ? 2 : 3});
           startEndedCountdown();
-          if (rankingRef.current.length > 0) setRanking(rankingRef.current);
 
-          openEndedModal(e.winner_id, '', '', e.final_price);
+          if (e.status === 'sold') {
+            openEndedModal(e.winner_id, e.winner_name || '', e.winner_avatar || '', e.final_price);
+          }
 
           const uid = userRef.current?.id;
           const tok = tokenRef.current;
-          if (e.winner_id === uid && tok) {
+          if (e.status === 'sold' && e.winner_id === uid && tok) {
             setTimeout(async () => {
               try {
                 const resp = await fetch(`/api/orders?token=${tok}`, {headers:{Authorization:`Bearer ${tok}`}});
@@ -275,8 +295,10 @@ export default function BuyerLiveRoom() {
       }),
       subscribe('online_count', (d: any) => {
         if (d.room_id === rid) {
-          setOnlineCount(d.count);
-          if (d.viewers) setViewers(d.viewers);
+          const count = d.count || 0;
+          setOnlineCount(count);
+          const v = Array.isArray(d.viewers) ? d.viewers : [];
+          setViewers(v.length > count ? v.slice(0, count) : v);
         }
       }),
       subscribe('like', (d: any) => {
@@ -307,17 +329,23 @@ export default function BuyerLiveRoom() {
     return () => clearTimeout(t);
   }, [toast]);
 
-  // Place bid
+  const [bidding, setBidding] = useState(false);
+
+  // Place bid — 500ms cooldown on success to prevent spam, backend lock handles dedup
   const handleBid = async () => {
-    if (!data?.auction_session || !token) return;
+    if (bidding || !data?.auction_session || !token) return;
+    setBidding(true);
     setMsg('');
     try {
       const key = `bid-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
       await buyerApi.placeBid(data.auction_session.id, amount, key, token);
       setMsg('出价成功！');
+      playCoinSound();
       loadRankingRef.current();
+      setTimeout(() => setBidding(false), 500);
     } catch (err: any) {
       setMsg(err.message);
+      setBidding(false);
     }
   };
 
@@ -402,10 +430,12 @@ export default function BuyerLiveRoom() {
   // Seller: open edit modal
   const openEdit = (p: any) => {
     setEditProduct(p);
+    const cp = fmt(p.ceiling_price || '0');
+    setNoCeilingEdit(Number(p.ceiling_price || 0) === 0);
     setEditForm({
       start_price: fmt(p.start_price || '0'),
       bid_increment: fmt(p.bid_increment || '10'),
-      ceiling_price: fmt(p.ceiling_price || '0'),
+      ceiling_price: cp === '0' ? '' : cp,
       duration_min: String(p.duration_min || 5),
       delay_seconds: String(p.delay_seconds || 30),
     });
@@ -414,10 +444,15 @@ export default function BuyerLiveRoom() {
   // Seller: save edit
   const handleSaveEdit = async () => {
     if (!token || !editProduct?.product_id) return;
+    // Validate ceiling >= start
+    const cp = Number(noCeilingEdit ? '0' : editForm.ceiling_price || '0');
+    const sp = Number(editForm.start_price || '0');
+    if (cp > 0 && cp <= sp) { setEditToast('封顶价必须大于起拍价'); return; }
     const body: any = {};
     if (editForm.start_price) body.start_price = editForm.start_price;
     if (editForm.bid_increment) body.bid_increment = editForm.bid_increment;
     if (editForm.ceiling_price) body.ceiling_price = editForm.ceiling_price;
+    if (noCeilingEdit) body.ceiling_price = '0';
     if (editForm.duration_min) body.duration_min = Number(editForm.duration_min);
     if (editForm.delay_seconds) body.delay_seconds = Number(editForm.delay_seconds);
     // Update product
@@ -434,6 +469,7 @@ export default function BuyerLiveRoom() {
       if (editForm.start_price) sessionBody.start_price = editForm.start_price;
       if (editForm.bid_increment) sessionBody.bid_increment = editForm.bid_increment;
       if (editForm.ceiling_price) sessionBody.ceiling_price = editForm.ceiling_price;
+      if (noCeilingEdit) sessionBody.ceiling_price = '0';
       if (editForm.duration_min) sessionBody.duration_min = Number(editForm.duration_min);
       if (editForm.delay_seconds) sessionBody.delay_seconds = Number(editForm.delay_seconds);
       const sres = await fetch(`/api/seller/auction-sessions/${editProduct.auction_id}`, { method:'PUT', headers:{'Content-Type':'application/json', Authorization:`Bearer ${token}`}, body:JSON.stringify(sessionBody) });
@@ -526,10 +562,12 @@ export default function BuyerLiveRoom() {
   };
   const [showAddProduct, setShowAddProduct] = useState(false);
   const [allSellerProducts, setAllSellerProducts] = useState<any[]>([]);
+  const [batchSelected, setBatchSelected] = useState<Set<number>>(new Set());
   const [sessionMinId, setSessionMinId] = useState(0);
   const [editProduct, setEditProduct] = useState<any>(null);
   const [editForm, setEditForm] = useState({ start_price: '', bid_increment: '', ceiling_price: '', duration_min: '', delay_seconds: '' });
   const [editToast, setEditToast] = useState('');
+  const [noCeilingEdit, setNoCeilingEdit] = useState(false);
 
   useEffect(() => { if (!editToast) return; const t = setTimeout(() => setEditToast(''), 2500); return () => clearTimeout(t); }, [editToast]);
   const [endedCountdown, setEndedCountdown] = useState(0);
@@ -641,11 +679,38 @@ export default function BuyerLiveRoom() {
         headers: { Authorization: `Bearer ${token}` },
       });
       const json = await data.json();
-      setAllSellerProducts((json.data?.list || []).filter((p:any)=>p.status!==5));
+      setAllSellerProducts((json.data?.list || []).filter((p:any)=>p.status===1));
     } catch {}
   };
 
-  // Add product to showcase
+  // Batch add selected products to showcase
+  const handleBatchAdd = async () => {
+    if (!token || batchSelected.size === 0) return;
+    const toAdd = allSellerProducts.filter(p => batchSelected.has(p.id));
+    for (const product of toAdd) {
+      try {
+        await fetch('/api/seller/auction-sessions', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+          body: JSON.stringify({
+            room_id: rid,
+            product_id: product.id,
+            start_price: product.start_price || '0',
+            bid_increment: product.bid_increment || '10',
+            ceiling_price: product.ceiling_price || '0',
+            delay_seconds: product.delay_seconds || 30,
+            duration_min: product.duration_min || 5,
+            sort_order: products.length,
+          }),
+        });
+      } catch { /* continue */ }
+    }
+    setBatchSelected(new Set());
+    loadProducts();
+    setShowAddProduct(false);
+  };
+
+  // Add single product to showcase
   const handleAddToShowcase = async (product: any) => {
     if (!token) return;
     try {
@@ -688,10 +753,10 @@ export default function BuyerLiveRoom() {
         }}>{toast}</div>
       )}
 
-      {/* Edit validation toast — centered, auto-fade */}
+      {/* Edit validation toast — above modal, auto-fade */}
       {editToast && (
         <div style={{
-          position: 'fixed', top: '50%', left: '50%', transform: 'translate(-50%,-50%)', zIndex: 1000,
+          position: 'fixed', top: '35%', left: '50%', transform: 'translate(-50%,-50%)', zIndex: 1000,
           background: 'rgba(15,15,40,0.95)', backdropFilter: 'blur(16px)',
           color: '#fff', padding: '14px 28px', borderRadius: 14,
           fontSize: 14, fontWeight: 600, textAlign: 'center',
@@ -713,11 +778,13 @@ export default function BuyerLiveRoom() {
           {/* Video Background */}
           <video
             ref={videoRef}
+            src={data?.live_room?.bg_video || '/video/bg.mp4'}
             muted
             autoPlay
             playsInline
             loop
             style={{
+              pointerEvents: 'none',
               position: 'absolute', inset: 0, width: '100%', height: '100%',
               objectFit: 'cover', background: '#0f0f23',
             }}
@@ -814,7 +881,7 @@ export default function BuyerLiveRoom() {
                 display: 'flex', alignItems: 'center', gap: 4,
               }}>
                 <span style={{ color: connected ? '#68d391' : '#fc8181', fontSize: 10 }}>●</span>
-                {onlineCount || data?.live_room?.online_count || 0} 人
+                {onlineCount} 人
               </span>
             )}
           </div>
@@ -997,6 +1064,12 @@ export default function BuyerLiveRoom() {
                     <div style={{ fontWeight: 'bold', fontSize: 16, marginBottom: 6 }}>
                       {drawerProduct.title || '竞拍商品'}
                     </div>
+                    {/* Product description — only for pending items */}
+                    {drawerStatus === 0 && (
+                      <div style={{ fontSize: 14, color: '#cbd5e0', lineHeight: 1.6, marginTop: 4 }}>
+                        {drawerProduct.description || '无'}
+                      </div>
+                    )}
                     {drawerStatus === 1 && (
                       <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 4 }}>
                         {/* Left: bid count + current price */}
@@ -1025,7 +1098,7 @@ export default function BuyerLiveRoom() {
                       </div>
                     )}
                     <div style={{ fontSize: 13, color: '#718096', marginTop: 2 }}>
-                      加价 ¥{fmt(drawerProduct.bid_increment || '10')}{drawerProduct.ceiling_price && drawerProduct.ceiling_price !== '0' ? ` · 封顶 ¥${fmt(drawerProduct.ceiling_price)}` : ''}
+                      加价 ¥{fmt(drawerProduct.bid_increment || '10')}{Number(drawerProduct.ceiling_price) > 0 ? ` · 封顶 ¥${fmt(drawerProduct.ceiling_price)}` : ' · 上不封顶'}
                     </div>
                   </div>
                 </div>
@@ -1072,11 +1145,14 @@ export default function BuyerLiveRoom() {
                         alignItems: 'center', justifyContent: 'center', color: '#4a5568',
                       }}>+</button>
                     </div>
-                    <button onClick={handleBid} style={{
+                    <button onClick={handleBid} disabled={bidding} style={{
                       marginTop: 12, width: '100%', padding: '12px',
-                      background: '#e53e3e', color: '#fff', border: 'none',
-                      borderRadius: 24, fontSize: 16, fontWeight: 'bold', cursor: 'pointer',
-                    }}>立即出价</button>
+                      background: bidding ? '#718096' : '#e53e3e', color: '#fff', border: 'none',
+                      borderRadius: 24, fontSize: 16, fontWeight: 'bold',
+                      cursor: bidding ? 'default' : 'pointer',
+                      opacity: bidding ? 0.6 : 1,
+                      transition: 'all 0.2s',
+                    }}>{bidding ? '出价中...' : '立即出价'}</button>
                   </>
                 )}
                 <div style={{ marginTop: 8, fontSize: 13, textAlign: 'center', minHeight: 20, lineHeight: '20px',
@@ -1136,15 +1212,17 @@ export default function BuyerLiveRoom() {
                     animation:`delayRing 1.2s ease-out ${i*0.15}s both` }} />
                 ))}
               </div>
-              <div style={{ fontSize:42, fontWeight:900, letterSpacing:2, color:'#81c784',
-                textShadow:'0 0 40px rgba(129,199,132,0.6), 0 4px 8px rgba(0,0,0,0.5)',
+              <div style={{ fontSize:56, fontWeight:900, letterSpacing:4, color:'#81c784',
+                textShadow:'0 0 60px rgba(129,199,132,0.8), 0 0 120px rgba(129,199,132,0.4), 0 6px 12px rgba(0,0,0,0.6)',
                 animation:'delayPulse 0.8s ease-out both' }}>{m.text}</div>
             </div>
           ))}
-          {centerMsgs.filter(m => m.type !== 'delay').length > 0 && (
-            (() => { const m = centerMsgs.filter(x => x.type !== 'delay').slice(-1)[0]; return (
-            <div style={{ position:'absolute', inset:0, zIndex:25, display:'flex', alignItems:'center', justifyContent:'center', pointerEvents:'none' }}>
-              {m.type === 'lead' && (
+          {(() => {
+            const latest = centerMsgs.filter(m => m.type !== 'delay').slice(-1)[0];
+            if (!latest) return null;
+            return (
+            <div key={latest.id} style={{ position:'absolute', inset:0, zIndex:25, display:'flex', alignItems:'center', justifyContent:'center', pointerEvents:'none' }}>
+              {latest.type === 'lead' && (
                 <div style={{ position:'absolute', inset:0, overflow:'hidden', pointerEvents:'none' }}>
                   {[{top:'48%',w:180,delay:0},{top:'50%',w:240,delay:0.06},{top:'52%',w:150,delay:0.12},{top:'49%',w:200,delay:0.04},{top:'51%',w:130,delay:0.1}].map((l, i) => (
                     <div key={i} style={{ position:'absolute', top:l.top, left:'50%', height:3, width:l.w, borderRadius:2,
@@ -1153,14 +1231,14 @@ export default function BuyerLiveRoom() {
                   ))}
                 </div>
               )}
-              <div style={{ fontSize:42, fontWeight:900, letterSpacing:2,
-                color: m.type==='lead'?'#fbbf24':'#f87171',
-                textShadow: m.type==='lead'?'0 0 40px rgba(251,191,36,0.6), 0 4px 8px rgba(0,0,0,0.5)':'0 0 40px rgba(248,113,113,0.6), 0 4px 8px rgba(0,0,0,0.5)',
-                animation: m.type==='lead'?'popIn 0.6s cubic-bezier(0.175, 0.885, 0.32, 1.275) both':'shakeIn 0.5s ease-out both',
-              }}>{m.text}</div>
+              <div style={{ fontSize:52, fontWeight:900, letterSpacing:3,
+                color: latest.type==='lead'?'#fbbf24':'#f87171',
+                textShadow: latest.type==='lead'?'0 0 80px rgba(251,191,36,0.8), 0 0 160px rgba(251,191,36,0.4), 0 6px 16px rgba(0,0,0,0.6)':'0 0 80px rgba(248,113,113,0.8), 0 0 160px rgba(248,113,113,0.4), 0 6px 16px rgba(0,0,0,0.6)',
+                animation: latest.type==='lead'?'popIn 0.6s cubic-bezier(0.175, 0.885, 0.32, 1.275) both':'shakeIn 0.5s ease-out both',
+              }}>{latest.text}</div>
             </div>
-            ); })()
-          )}
+            );
+          })()}
 
           {/* Video content */}
           {!error && (
@@ -1286,32 +1364,64 @@ export default function BuyerLiveRoom() {
             </div>
 
             {/* Add product sub-panel */}
-            {showAddProduct && (
+            {showAddProduct && (() => {
+              const available = allSellerProducts.filter((ap: any) => !products.some((p: any) => p.product_id === ap.id));
+              const allSelected = available.length > 0 && available.every((ap: any) => batchSelected.has(ap.id));
+              return (
               <div style={{ padding: '0 16px 12px', borderBottom: '1px solid #2d2d4a' }}>
-                <div style={{ fontSize: 13, fontWeight: 'bold', marginBottom: 8, color: '#a0aec0' }}>选择要添加的商品：</div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                  <span style={{ fontSize: 13, fontWeight: 'bold', color: '#a0aec0' }}>选择要添加的商品 ({batchSelected.size} 已选)</span>
+                  <div style={{ display: 'flex', gap: 6 }}>
+                    <button onClick={() => {
+                      if (allSelected) setBatchSelected(new Set());
+                      else setBatchSelected(new Set(available.map((p: any) => p.id)));
+                    }} style={{
+                      padding: '3px 8px', background: 'rgba(99,102,241,0.15)', color: '#a5b4fc',
+                      border: '1px solid rgba(99,102,241,0.2)', borderRadius: 4, fontSize: 11, cursor: 'pointer',
+                    }}>{allSelected ? '取消全选' : '全选'}</button>
+                    <button onClick={handleBatchAdd} disabled={batchSelected.size === 0} style={{
+                      padding: '3px 8px', background: batchSelected.size > 0 ? '#10b981' : '#4a5568',
+                      color: '#fff', border: 'none', borderRadius: 4, fontSize: 11, cursor: batchSelected.size > 0 ? 'pointer' : 'default',
+                      opacity: batchSelected.size > 0 ? 1 : 0.5,
+                    }}>批量添加 ({batchSelected.size})</button>
+                  </div>
+                </div>
                 <div style={{ maxHeight: 200, overflow: 'auto' }}>
-                  {allSellerProducts.filter((ap: any) => !products.some((p: any) => p.product_id === ap.id)).length === 0 ? (
+                  {available.length === 0 ? (
                     <div style={{ color: '#718096', fontSize: 12, padding: 10 }}>所有商品已添加</div>
                   ) : (
-                    allSellerProducts.filter((ap: any) => !products.some((p: any) => p.product_id === ap.id)).map((ap: any) => (
-                      <div key={ap.id} onClick={() => handleAddToShowcase(ap)} style={{
+                    available.map((ap: any) => {
+                      const sel = batchSelected.has(ap.id);
+                      return (
+                      <div key={ap.id} onClick={() => {
+                        const next = new Set(batchSelected);
+                        sel ? next.delete(ap.id) : next.add(ap.id);
+                        setBatchSelected(next);
+                      }} style={{
                         display: 'flex', alignItems: 'center', gap: 8, padding: '6px 8px',
                         cursor: 'pointer', borderRadius: 6, marginBottom: 2,
-                        background: '#2d2d4a',
+                        background: sel ? 'rgba(99,102,241,0.2)' : '#2d2d4a',
+                        border: sel ? '1px solid rgba(99,102,241,0.3)' : '1px solid transparent',
                       }}>
+                        <span style={{
+                          width: 16, height: 16, borderRadius: 3, flexShrink: 0,
+                          border: sel ? '2px solid #818cf8' : '2px solid rgba(255,255,255,0.15)',
+                          background: sel ? '#818cf8' : 'transparent',
+                          display: 'flex', alignItems: 'center', justifyContent: 'center',
+                          fontSize: 10, color: '#fff', fontWeight: 'bold',
+                        }}>{sel ? '✓' : ''}</span>
                         <span style={{ fontSize: 13, flex: 1 }}>{ap.title}</span>
                         <span style={{ fontSize: 11, color: '#a0aec0' }}>起拍 ¥{fmt(ap.start_price || '0')}</span>
-                        <span style={{ color: '#68d391', fontSize: 16 }}>+</span>
                       </div>
-                    ))
+                    )})
                   )}
                 </div>
-                <button onClick={() => setShowAddProduct(false)} style={{
+                <button onClick={() => { setShowAddProduct(false); setBatchSelected(new Set()); }} style={{
                   marginTop: 8, padding: '4px 12px', background: '#4a5568', color: '#fff',
                   border: 'none', borderRadius: 4, fontSize: 11, cursor: 'pointer',
                 }}>取消</button>
               </div>
-            )}
+            ); })()}
 
             <div style={{ padding: '12px 16px' }}>
               {sortedProducts.length === 0 ? (
@@ -1347,7 +1457,7 @@ export default function BuyerLiveRoom() {
                         </div>
                         <div style={{ fontSize: 11, color: '#a0aec0' }}>
                           起拍 ¥{fmt(p.start_price || '0')} · 加价 ¥{fmt(p.bid_increment || '10')}
-                          {p.ceiling_price && p.ceiling_price !== '0' ? ` · 封顶 ¥${fmt(p.ceiling_price)}` : ''}
+                          {Number(p.ceiling_price) > 0 ? ` · 封顶 ¥${fmt(p.ceiling_price)}` : ' · 上不封顶'}
                           {p.bid_count ? ` · ${p.bid_count}次出价` : ''}
                         </div>
                         {/* Sold: winner info */}
@@ -1431,7 +1541,35 @@ export default function BuyerLiveRoom() {
             {[
               {l:'起拍价',k:'start_price'},
               {l:'加价幅度',k:'bid_increment'},
-              {l:'封顶价',k:'ceiling_price'},
+            ].map(f => (
+              <div key={f.k} style={{ marginBottom:10 }}>
+                <label style={{ fontSize:12, color:'rgba(148,163,184,0.6)', display:'block', marginBottom:4 }}>{f.l}</label>
+                <input value={(editForm as any)[f.k]} onChange={e => setEditForm({...editForm, [f.k]: e.target.value})}
+                  style={{ width:'100%', padding:'8px 12px', background:'rgba(255,255,255,0.04)', border:'1px solid rgba(255,255,255,0.08)', borderRadius:8, fontSize:14, color:'#e2e8f0', outline:'none', fontFamily:'inherit', boxSizing:'border-box' }} />
+              </div>
+            ))}
+            {/* Ceiling price with no-ceiling toggle */}
+            <div style={{ marginBottom:10 }}>
+              <label style={{ fontSize:12, color:'rgba(148,163,184,0.6)', display:'block', marginBottom:4 }}>封顶价</label>
+              <div style={{ display:'flex', alignItems:'center', gap:8 }}>
+                <div onClick={()=>setNoCeilingEdit(!noCeilingEdit)} style={{ cursor:'pointer', display:'flex', alignItems:'center', gap:5, flexShrink:0 }}>
+                  <div style={{
+                    width:16, height:16, borderRadius:'50%',
+                    border: noCeilingEdit?'2px solid #818cf8':'2px solid rgba(255,255,255,0.2)',
+                    background: noCeilingEdit?'#818cf8':'transparent',
+                    display:'flex', alignItems:'center', justifyContent:'center',
+                    transition:'all 0.2s',
+                  }}>
+                    {noCeilingEdit && <span style={{ color:'#fff', fontSize:10, fontWeight:'bold' }}>✓</span>}
+                  </div>
+                  <span style={{ fontSize:11, color:noCeilingEdit?'#cbd5e0':'rgba(148,163,184,0.5)', whiteSpace:'nowrap' }}>不设封顶价</span>
+                </div>
+                <input value={noCeilingEdit?'':editForm.ceiling_price} disabled={noCeilingEdit}
+                  onChange={e => setEditForm({...editForm, ceiling_price: e.target.value})}
+                  style={{ flex:1, padding:'8px 12px', background:'rgba(255,255,255,0.04)', border:'1px solid rgba(255,255,255,0.08)', borderRadius:8, fontSize:14, color:'#e2e8f0', outline:'none', fontFamily:'inherit', boxSizing:'border-box', opacity:noCeilingEdit?0.3:1 }} />
+              </div>
+            </div>
+            {[
               {l:'时长(分钟)',k:'duration_min'},
               {l:'延时(秒)',k:'delay_seconds'},
             ].map(f => (

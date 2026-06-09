@@ -29,6 +29,7 @@ type SellerOrderItem struct {
 	Order
 	ProductTitle   string `json:"product_title"`
 	ProductImage   string `json:"product_image"`
-	BuyerNickname  string `json:"buyer_nickname"`
-	BuyerAvatar    string `json:"buyer_avatar"`
+	BuyerNickname  string     `json:"buyer_nickname"`
+	BuyerAvatar    string     `json:"buyer_avatar"`
+	AuctionStart   *time.Time `json:"auction_start"`
 }

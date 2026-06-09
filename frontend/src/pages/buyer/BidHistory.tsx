@@ -16,6 +16,7 @@ interface BidHistoryItem {
   room_id: number;
   seller_nickname: string;
   seller_avatar: string;
+  auction_start: string;
 }
 
 const fmt = (s?: string) =>
@@ -120,9 +121,12 @@ export default function BidHistory() {
                       />
                       <span style={{ fontSize: 12, color: 'rgba(226,232,240,0.7)' }}>{item.seller_nickname || '-'}</span>
                     </div>
-                    <div style={{ fontSize: 12, color: 'rgba(148,163,184,0.4)' }}>
+                    <div style={{ fontSize: 12, color: '#94a3b8' }}>
+                      {item.auction_start && <span style={{ marginRight: 8 }}>开拍 {new Date(item.auction_start).toLocaleString('zh-CN', {month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'})}</span>}
+                    </div>
+                    <div style={{ fontSize: 13, color: '#cbd5e0', fontWeight: 500 }}>
                       我的出价 ¥{fmt(item.bid_amount)}
-                      {item.final_price && ` · 落槌价 ¥${fmt(item.final_price)}`}
+                      {item.final_price && <span style={{ color: '#fbbf24' }}> · 落槌价 ¥{fmt(item.final_price)}</span>}
                     </div>
                   </div>
 

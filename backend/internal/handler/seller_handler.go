@@ -60,6 +60,20 @@ func (h *SellerHandler) UploadImage(c *gin.Context) {
 	response.Success(c, gin.H{"url": url})
 }
 
+func (h *SellerHandler) UploadVideo(c *gin.Context) {
+	file, err := c.FormFile("file")
+	if err != nil {
+		response.Error(c, errcode.ErrInvalidParam, "missing file")
+		return
+	}
+	url, err := h.uploader.SaveVideo(file)
+	if err != nil {
+		response.Error(c, errcode.ErrInvalidParam, err.Error())
+		return
+	}
+	response.Success(c, gin.H{"url": url})
+}
+
 // ============================================================
 // Product management
 // ============================================================
@@ -487,6 +501,7 @@ type dashboardActiveAuction struct {
 	CoverImage   string `json:"cover_image"`
 	CurrentPrice string `json:"current_price"`
 	BidCount     int64  `json:"bid_count"`
+		AuctionStart  *time.Time `json:"auction_start"`
 	RemainingMs  int64  `json:"remaining_ms"`
 }
 
@@ -578,6 +593,7 @@ type productWithAuctionResp struct {
 	CurrentPrice  *string `json:"current_price"`
 	FinalPrice    *string `json:"final_price"`
 	BidCount      *uint   `json:"bid_count"`
+		AuctionStart  *time.Time `json:"auction_start"`
 }
 
 func (h *SellerHandler) ListProducts(c *gin.Context) {
@@ -616,6 +632,7 @@ func (h *SellerHandler) ListProducts(c *gin.Context) {
 			Status: int(r.Status), StatusName: productStatusNames[int(r.Status)],
 			AuctionID: r.AuctionID, AuctionStatus: r.AuctionStatus,
 			CurrentPrice: r.CurrentPrice, FinalPrice: r.FinalPrice, BidCount: r.BidCount,
+				AuctionStart: r.AuctionStart,
 		})
 	}
 

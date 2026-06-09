@@ -63,6 +63,45 @@ func (u *Uploader) SaveImage(file *multipart.FileHeader) (string, error) {
 	return url, nil
 }
 
+func (u *Uploader) SaveVideo(file *multipart.FileHeader) (string, error) {
+	if file.Size > u.MaxSize*5 { // 5x image max for video
+		return "", fmt.Errorf("file too large")
+	}
+
+	ext := strings.ToLower(filepath.Ext(file.Filename))
+	if ext != ".mp4" && ext != ".webm" && ext != ".mov" {
+		return "", fmt.Errorf("unsupported video format: %s (use mp4/webm/mov)", ext)
+	}
+
+	dateDir := time.Now().Format("2006/01/02")
+	dir := filepath.Join(u.BasePath, dateDir)
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return "", err
+	}
+
+	filename := fmt.Sprintf("vid_%d_%s%s", time.Now().UnixNano(), randomStr(8), ext)
+	fullPath := filepath.Join(dir, filename)
+
+	src, err := file.Open()
+	if err != nil {
+		return "", err
+	}
+	defer src.Close()
+
+	dst, err := os.Create(fullPath)
+	if err != nil {
+		return "", err
+	}
+	defer dst.Close()
+
+	if _, err := io.Copy(dst, src); err != nil {
+		return "", err
+	}
+
+	url := fmt.Sprintf("%s/%s/%s", u.BaseURL, dateDir, filename)
+	return url, nil
+}
+
 func randomStr(n int) string {
 	const letters = "abcdefghijklmnopqrstuvwxyz0123456789"
 	b := make([]byte, n)

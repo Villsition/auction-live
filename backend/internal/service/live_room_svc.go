@@ -26,7 +26,18 @@ func (s *LiveRoomSvc) Create(ctx context.Context, room *model.LiveRoom) error {
 }
 
 func (s *LiveRoomSvc) GetByID(ctx context.Context, id uint64) (*model.LiveRoom, error) {
-	return s.repo.GetByID(ctx, id)
+	room, err := s.repo.GetByID(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	// Enrich with real-time Redis online count
+	if room.Status == model.LiveRoomStatusLive {
+		key := fmt.Sprintf("auction:%d:viewers", id)
+		if count, err := s.rdb.SCard(ctx, key).Result(); err == nil {
+			room.OnlineCount = uint(count)
+		}
+	}
+	return room, nil
 }
 
 func (s *LiveRoomSvc) Update(ctx context.Context, id uint64, updates map[string]any) error {

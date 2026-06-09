@@ -9,6 +9,7 @@ type LiveRoom struct {
 	CoverImage     string         `gorm:"column:cover_image;type:varchar(512);not null;default:''" json:"cover_image"`
 	StreamURL      string         `gorm:"column:stream_url;type:varchar(512);not null;default:''" json:"stream_url"`
 	PullURL        string         `gorm:"column:pull_url;type:varchar(512);not null;default:''" json:"pull_url"`
+	BgVideo        string         `gorm:"column:bg_video;type:varchar(512);not null;default:''" json:"bg_video"`
 	Status         LiveRoomStatus `gorm:"column:status;not null;default:0" json:"status"`
 	OnlineCount    uint           `gorm:"column:online_count;not null;default:0" json:"online_count"`
 	TotalLikes     uint64         `gorm:"column:total_likes;not null;default:0" json:"total_likes"`

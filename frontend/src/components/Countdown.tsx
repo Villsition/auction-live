@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, memo } from 'react';
 
 interface Props {
   endTimestampMs: number;
@@ -19,33 +19,42 @@ function DigitBox({ ch, urgent }: { ch: string; urgent?: boolean }) {
   );
 }
 
-export default function Countdown({ endTimestampMs, serverTimeMs, onEnd }: Props) {
+const Countdown = memo(function Countdown({ endTimestampMs, serverTimeMs, onEnd }: Props) {
   const [remaining, setRemaining] = useState(0);
   const onEndRef = useRef(onEnd);
   onEndRef.current = onEnd;
+  const firedRef = useRef(false);
 
   useEffect(() => {
     if (!endTimestampMs) return;
 
-    // Use absolute timestamp — no offset resets
+    // Use serverTimeMs to compute a one-time offset for clock correction
+    const offset = serverTimeMs - Date.now();
+    firedRef.current = false;
+
     const tick = () => {
-      const ms = endTimestampMs - Date.now();
+      const ms = endTimestampMs - Date.now() - offset;
       if (ms <= 0) {
         setRemaining(0);
-        onEndRef.current?.();
+        if (!firedRef.current) {
+          firedRef.current = true;
+          onEndRef.current?.();
+        }
         return;
       }
       setRemaining(ms);
     };
 
     tick();
-    const timer = setInterval(tick, 200);
+    const timer = setInterval(tick, 50);
     return () => clearInterval(timer);
-  }, [endTimestampMs]);
+  }, [endTimestampMs, serverTimeMs]);
 
-  const totalSec = Math.floor(remaining / 1000);
+  const totalMs = remaining;
+  const totalSec = Math.floor(totalMs / 1000);
   const min = Math.floor(totalSec / 60);
   const sec = totalSec % 60;
+  const tenth = Math.floor((totalMs % 1000) / 100); // 0.1s precision
   const digits = String(min).padStart(2, '0') + String(sec).padStart(2, '0');
   const urgent = totalSec <= 10 && remaining > 0;
 
@@ -58,4 +67,6 @@ export default function Countdown({ endTimestampMs, serverTimeMs, onEnd }: Props
       <DigitBox ch={digits[3]} urgent={urgent} />
     </span>
   );
-}
+});
+
+export default Countdown;

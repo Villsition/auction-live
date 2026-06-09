@@ -1,4 +1,4 @@
-import { useRef, useLayoutEffect } from 'react';
+import { useRef, useLayoutEffect, memo } from 'react';
 import type { RankItem } from '../types';
 
 interface Props {
@@ -7,7 +7,7 @@ interface Props {
   myUserId?: number;
 }
 
-export default function RankingList({ ranking, myBid, myUserId }: Props) {
+const RankingList = memo(function RankingList({ ranking, myBid, myUserId }: Props) {
   const listRef = useRef<HTMLDivElement>(null);
   const prevPosRef = useRef<Map<number, { top: number; rank: number }>>(new Map());
 
@@ -139,4 +139,6 @@ export default function RankingList({ ranking, myBid, myUserId }: Props) {
       )}
     </div>
   );
-}
+});
+
+export default RankingList;

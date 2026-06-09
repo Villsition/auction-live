@@ -3,6 +3,7 @@ package handler
 import (
 	"encoding/json"
 	"context"
+	"fmt"
 	"strconv"
 	"time"
 
@@ -133,12 +134,22 @@ func (h *BuyerHandler) GetCurrentAuction(c *gin.Context) {
 	nowMs := time.Now().UnixMilli()
 	var endTimestamp int64
 	var remainingMs int64
-	if session.PlannedEndTime != nil {
-		endTimestamp = session.PlannedEndTime.UnixMilli()
-		remainingMs = endTimestamp - nowMs
-		if remainingMs < 0 {
-			remainingMs = 0
+	// Prefer Redis end_timestamp (may have been extended by delay)
+	if rules, err := h.bidSvc.GetAuctionRules(c.Request.Context(), session.ID); err == nil {
+		if et, ok := rules["end_timestamp"]; ok && et != "" {
+			var redisEnd int64
+			if _, parseErr := fmt.Sscanf(et, "%d", &redisEnd); parseErr == nil && redisEnd > 0 {
+				endTimestamp = redisEnd
+			}
 		}
+	}
+	// Fallback to MySQL
+	if endTimestamp == 0 && session.PlannedEndTime != nil {
+		endTimestamp = session.PlannedEndTime.UnixMilli()
+	}
+	remainingMs = endTimestamp - nowMs
+	if remainingMs < 0 {
+		remainingMs = 0
 	}
 
 	// Suggested next bid
@@ -425,11 +436,12 @@ func (h *BuyerHandler) BidHistory(c *gin.Context) {
 		RoomID         uint64  `gorm:"column:room_id"`
 		SellerNickname string  `gorm:"column:seller_nickname"`
 		SellerAvatar   string  `gorm:"column:seller_avatar"`
+		AuctionStart   string  `gorm:"column:auction_start"`
 	}
 
 	var total int64
 	h.db.Table("bids b").
-		Select("b.id as bid_id, b.auction_id, b.amount as bid_amount, b.bid_time, p.id as product_id, p.title as product_title, COALESCE(p.cover_image,'') as product_image, auc.final_price, auc.status as auction_status, auc.winner_id, lr.id as room_id, u.nickname as seller_nickname, COALESCE(u.avatar,'') as seller_avatar").
+		Select("b.id as bid_id, b.auction_id, b.amount as bid_amount, b.bid_time, p.id as product_id, p.title as product_title, COALESCE(p.cover_image,'') as product_image, auc.final_price, auc.status as auction_status, auc.winner_id, lr.id as room_id, u.nickname as seller_nickname, COALESCE(u.avatar,'') as seller_avatar, auc.start_time as auction_start").
 		Joins("JOIN auction_sessions auc ON auc.id = b.auction_id").
 		Joins("JOIN products p ON p.id = auc.product_id").
 		Joins("JOIN live_rooms lr ON lr.id = auc.room_id").
@@ -439,7 +451,7 @@ func (h *BuyerHandler) BidHistory(c *gin.Context) {
 
 	var rows []row
 	err := h.db.Table("bids b").
-		Select("b.id as bid_id, b.auction_id, b.amount as bid_amount, b.bid_time, p.id as product_id, p.title as product_title, COALESCE(p.cover_image,'') as product_image, auc.final_price, auc.status as auction_status, auc.winner_id, lr.id as room_id, u.nickname as seller_nickname, COALESCE(u.avatar,'') as seller_avatar").
+		Select("b.id as bid_id, b.auction_id, b.amount as bid_amount, b.bid_time, p.id as product_id, p.title as product_title, COALESCE(p.cover_image,'') as product_image, auc.final_price, auc.status as auction_status, auc.winner_id, lr.id as room_id, u.nickname as seller_nickname, COALESCE(u.avatar,'') as seller_avatar, auc.start_time as auction_start").
 		Joins("JOIN auction_sessions auc ON auc.id = b.auction_id").
 		Joins("JOIN products p ON p.id = auc.product_id").
 		Joins("JOIN live_rooms lr ON lr.id = auc.room_id").
@@ -469,6 +481,7 @@ func (h *BuyerHandler) BidHistory(c *gin.Context) {
 		RoomID         uint64  `json:"room_id"`
 		SellerNickname string  `json:"seller_nickname"`
 		SellerAvatar   string  `json:"seller_avatar"`
+			AuctionStart   string  `json:"auction_start"`
 	}
 	items := make([]item, len(rows))
 	for i, r := range rows {

@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"strconv"
+	"time"
 
 	"auction/internal/model"
 
@@ -45,8 +46,9 @@ type ProductWithAuction struct {
 	AuctionID     *uint64 `gorm:"column:auction_id"     json:"auction_id"`
 	AuctionStatus *uint8  `gorm:"column:auction_status" json:"auction_status"`
 	CurrentPrice  *string `gorm:"column:auc_current_price" json:"auc_current_price"`
-	FinalPrice    *string `gorm:"column:auc_final_price"   json:"auc_final_price"`
-	BidCount      *uint   `gorm:"column:auc_bid_count"     json:"auc_bid_count"`
+	FinalPrice    *string    `gorm:"column:auc_final_price"   json:"auc_final_price"`
+	BidCount      *uint      `gorm:"column:auc_bid_count"     json:"auc_bid_count"`
+	AuctionStart  *time.Time `gorm:"column:auc_start_time"    json:"auction_start"`
 }
 
 // ListWithAuction returns seller's products with their latest auction session info.
@@ -75,7 +77,7 @@ func (r *ProductRepo) ListWithAuction(ctx context.Context, sellerID uint64, keyw
 
 	err := base.Select(`p.*, auc.id as auction_id, auc.status as auction_status,
 		auc.current_price as auc_current_price, auc.final_price as auc_final_price,
-		auc.bid_count as auc_bid_count`).
+		auc.bid_count as auc_bid_count, auc.start_time as auc_start_time`).
 		Offset(page.Offset()).Limit(page.PageSize).
 		Order("p.created_at DESC").Find(&rows).Error
 	return rows, total, err

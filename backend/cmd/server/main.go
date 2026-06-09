@@ -70,11 +70,8 @@ func main() {
 	sqlDB.SetMaxOpenConns(cfg.DB.MaxOpenConns)
 
 	// Ensure performance indexes exist (ignore error if already present)
-	if err := db.Exec("CREATE INDEX idx_seller_status ON orders(seller_id, status)").Error; err != nil {
-		zapLog.Debug("index may already exist", zap.String("index", "idx_seller_status"), zap.Error(err))
-	}
-	if err := db.Exec("CREATE INDEX idx_seller_created ON orders(seller_id, created_at)").Error; err != nil {
-		zapLog.Debug("index may already exist", zap.String("index", "idx_seller_created"), zap.Error(err))
+	if err := db.Exec("CREATE INDEX idx_bids_user_valid ON bids(user_id, is_valid)").Error; err != nil {
+		zapLog.Debug("index may already exist", zap.String("index", "idx_bids_user_valid"), zap.Error(err))
 	}
 
 	zapLog.Info("database connected", zap.String("host", cfg.DB.Host))
@@ -141,9 +138,10 @@ func main() {
 		Comment:         handler.NewCommentHandler(commentSvc),
 		Like:            handler.NewLikeHandler(rdb, hub),
 		WS:              handler.NewWSHandler(hub, cfg.JWT.Secret, zapLog),
+		Health:          handler.NewHealthHandler(db, rdb),
 	}
 
-	watcher := scheduler.NewAuctionWatcher(rdb, auctionSessionRepo, bidRepo, orderRepo, notifSvc, hub, zapLog)
+	watcher := scheduler.NewAuctionWatcher(rdb, auctionSessionRepo, bidRepo, orderRepo, userRepo, notifSvc, hub, zapLog)
 	watcher.Start()
 
 	likeFlusher := scheduler.NewLikeFlusher(rdb, db, zapLog)

@@ -7,6 +7,7 @@ import (
 	"log"
 	"time"
 
+	"auction/internal/metrics"
 	"auction/internal/model"
 	"auction/internal/repository"
 	"auction/internal/ws"
@@ -26,7 +27,7 @@ func NewBidSvc(repo *repository.BidRepo, notifSvc *NotificationSvc, hub *ws.Hub)
 
 // PlaceBid validates and records a bid via Redis (atomic Lua) + persists to MySQL.
 func (s *BidSvc) PlaceBid(ctx context.Context, bid *model.Bid) (*repository.BidResult, error) {
-	locked, err := s.repo.AcquireBidLock(ctx, bid.AuctionID, bid.UserID, 2*time.Second)
+	locked, err := s.repo.AcquireBidLock(ctx, bid.AuctionID, bid.UserID, 1*time.Second)
 	if err != nil {
 		return nil, err
 	}
@@ -55,10 +56,14 @@ func (s *BidSvc) PlaceBid(ctx context.Context, bid *model.Bid) (*repository.BidR
 	// Snapshot old leader before placing bid
 	oldLeaderID := s.getLeaderID(ctx, bid.AuctionID)
 
+	start := time.Now()
 	result, err := s.repo.PlaceBid(ctx, bid)
 	if err != nil {
+		metrics.BidsTotal.WithLabelValues("fail").Inc()
 		return nil, err
 	}
+	metrics.BidLatency.Observe(time.Since(start).Seconds())
+	metrics.BidsTotal.WithLabelValues("success").Inc()
 
 	// If ceiling deal, clamp bid amount to ceiling price before persisting
 	if result.CeilingDeal {
@@ -96,7 +101,8 @@ func (s *BidSvc) PlaceBid(ctx context.Context, bid *model.Bid) (*repository.BidR
 		CeilingDeal: result.CeilingDeal,
 		DelayExtend: result.DelayExtend,
 		FinalDelay:  result.FinalDelay,
-		NewEndTime:  result.NewEndTimestamp,
+		NewEndTime:   result.NewEndTimestamp,
+		ServerTimeMs: time.Now().UnixMilli(),
 	})
 
 	// Notification logic: leader change detection
@@ -197,6 +203,10 @@ func (s *BidSvc) FlushAuctionCache(ctx context.Context, auctionID uint64) error 
 
 func (s *BidSvc) SetAuctionStatus(ctx context.Context, auctionID uint64, status model.AuctionStatus) error {
 	return s.repo.SetAuctionStatus(ctx, auctionID, status)
+}
+
+func (s *BidSvc) GetAuctionRules(ctx context.Context, auctionID uint64) (map[string]string, error) {
+	return s.repo.GetAuctionRules(ctx, auctionID)
 }
 
 func (s *BidSvc) GetAuctionStatus(ctx context.Context, auctionID uint64) (int, error) {
