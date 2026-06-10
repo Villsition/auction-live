@@ -14,3 +14,5 @@ auction-server
 
 # Redis dump
 dump.rdb
+
+bidbench
