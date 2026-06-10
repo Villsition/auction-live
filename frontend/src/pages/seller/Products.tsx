@@ -27,6 +27,7 @@ export default function Products() {
   const [form, setForm] = useState({ title:'', description:'', cover_image:'', start_price:'0', bid_increment:'10', ceiling_price:'0' });
   const [duration, setDuration] = useState('5');
   const [delay, setDelay] = useState('30');
+  const [noCeiling, setNoCeiling] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [imagePreview, setImagePreview] = useState('');
   const [editId, setEditId] = useState<number|null>(null);
@@ -54,34 +55,46 @@ export default function Products() {
     setUploading(false);
   };
 
+  const validateCeiling = () => {
+    const cp = Number(noCeiling ? '0' : form.ceiling_price || '0');
+    const sp = Number(form.start_price || '0');
+    if (cp > 0 && cp <= sp) { setProdToast('封顶价必须大于起拍价'); return false; }
+    return true;
+  };
+
   const handleCreate = async () => {
     if (!token || !form.title) return;
     if (!form.cover_image) { alert('请上传商品图片'); return; }
+    if (!validateCeiling()) return;
     try {
-      await seller.createProduct({ ...form, duration_min: Number(duration), delay_seconds: Number(delay) }, token);
+      await seller.createProduct({ ...form, ceiling_price: noCeiling ? '0' : (form.ceiling_price || '0'), duration_min: Number(duration), delay_seconds: Number(delay) }, token);
       setShowAdd(false); resetForm(); load();
     } catch (err: any) { alert(err.message); }
   };
 
   const handleUpdate = async (id: number) => {
     if (!token) return;
+    if (!validateCeiling()) return;
     try {
-      await seller.updateProduct(id, { ...form, duration_min: Number(duration), delay_seconds: Number(delay) }, token);
+      await seller.updateProduct(id, { ...form, ceiling_price: noCeiling ? '0' : (form.ceiling_price || '0'), duration_min: Number(duration), delay_seconds: Number(delay) }, token);
       setEditId(null); resetForm(); load();
     } catch (err: any) { setProdToast(err.message); }
   };
 
   const openEdit = (p: ProductWithAuction) => {
     setEditId(p.id);
-    setForm({ title:p.title||'', description:p.description||'', cover_image:p.cover_image||'', start_price:fmt(p.start_price)||'0', bid_increment:fmt(p.bid_increment)||'10', ceiling_price:fmt(p.ceiling_price)||'0' });
+    const cp = fmt(p.ceiling_price) || '0';
+    const isNoCeiling = Number(p.ceiling_price || 0) === 0;
+    setForm({ title:p.title||'', description:p.description||'', cover_image:p.cover_image||'', start_price:fmt(p.start_price)||'0', bid_increment:fmt(p.bid_increment)||'10', ceiling_price: isNoCeiling ? '' : cp });
     setDuration(String((p as any).duration_min || 5));
     setDelay(String((p as any).delay_seconds || 30));
+    setNoCeiling(isNoCeiling);
     setImagePreview(p.cover_image||'');
   };
 
   const resetForm = () => {
     setForm({ title:'', description:'', cover_image:'', start_price:'0', bid_increment:'10', ceiling_price:'0' });
-    setDuration('5'); setDelay('30'); setImagePreview('');
+    setDuration('5'); setDelay('30'); setNoCeiling(false); setImagePreview('');
   };
 
   const handleDelete = async (id: number) => {
@@ -89,8 +102,8 @@ export default function Products() {
     await seller.deleteProduct(id, token); load();
   };
 
-  const statusNames: Record<number, string> = { 0:'草稿', 1:'已上架', 2:'竞拍中', 3:'已售', 4:'已流拍', 5:'已取消' };
-  const statusColors: Record<number, string> = { 0:'#a0aec0', 1:'#60a5fa', 2:'#f59e0b', 3:'#34d399', 4:'#f87171', 5:'#9ca3af' };
+  const statusNames: Record<number, string> = { 0:'草稿', 1:'已上架', 3:'已售' };
+  const statusColors: Record<number, string> = { 0:'#9ca3af', 1:'#60a5fa', 3:'#34d399' };
 
   return (
     <div style={{
@@ -127,14 +140,14 @@ export default function Products() {
             style={{ flex:1, ...inputBase }} />
           <div style={{ position:'relative', width:140 }}>
             <div onClick={()=>setShowStatusMenu(!showStatusMenu)} style={{ ...inputBase, display:'flex', alignItems:'center', justifyContent:'space-between', cursor:'pointer' }}>
-              <span style={{ color: status==='-1'?'rgba(148,163,184,0.4)':'#e2e8f0', fontSize:14 }}>{{'-1':'全部状态','0':'草稿','1':'已上架','2':'竞拍中','3':'已售'}[status]||'全部状态'}</span>
+              <span style={{ color: status==='-1'?'rgba(148,163,184,0.4)':'#e2e8f0', fontSize:14 }}>{{'-1':'全部状态','0':'草稿','1':'已上架','3':'已售'}[status]||'全部状态'}</span>
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="rgba(148,163,184,0.4)" strokeWidth="2" style={{ transform:showStatusMenu?'rotate(180deg)':'rotate(0)', transition:'transform 0.2s' }}><path d="M6 9l6 6 6-6"/></svg>
             </div>
             {showStatusMenu && <>
               <div onClick={()=>setShowStatusMenu(false)} style={{ position:'fixed', inset:0, zIndex:5 }} />
               <div style={{ position:'absolute', top:48, left:0, right:0, zIndex:100, background:'rgba(15,15,40,0.98)', backdropFilter:'blur(16px)', borderRadius:10, border:'1px solid rgba(255,255,255,0.08)', overflow:'hidden', animation:'fadeIn 0.2s ease-out' }}>
-                {[{v:'-1',l:'全部状态'},{v:'0',l:'草稿'},{v:'1',l:'已上架'},{v:'2',l:'竞拍中'},{v:'3',l:'已售'}].map(o=>(
-                  <div key={o.v} onClick={()=>{setStatus(o.v);setShowStatusMenu(false);load();}} style={{ padding:'10px 14px', cursor:'pointer', fontSize:14, color:status===o.v?'#a78bfa':'#cbd5e0', background:status===o.v?'rgba(139,92,246,0.1)':'transparent', transition:'background 0.15s' }}
+                {[{v:'-1',l:'全部状态'},{v:'0',l:'草稿'},{v:'1',l:'已上架'},{v:'3',l:'已售'}].map(o=>(
+                  <div key={o.v} onClick={()=>{setStatus(o.v);setPage(1);setShowStatusMenu(false);}} style={{ padding:'10px 14px', cursor:'pointer', fontSize:14, color:status===o.v?'#a78bfa':'#cbd5e0', background:status===o.v?'rgba(139,92,246,0.1)':'transparent', transition:'background 0.15s' }}
                     onMouseEnter={e=>{if(status!==o.v)e.currentTarget.style.background='rgba(255,255,255,0.04)'}} onMouseLeave={e=>{if(status!==o.v)e.currentTarget.style.background='transparent'}}>{o.l}</div>
                 ))}
               </div>
@@ -159,11 +172,12 @@ export default function Products() {
             {/* Info */}
             <div style={{ flex:1 }}>
               <div style={{ fontWeight:600, fontSize:14, marginBottom:4 }}>{p.title}</div>
-              <div style={{ fontSize:12, color:'rgba(148,163,184,0.5)' }}>
-                起拍 ¥{fmt(p.start_price||'0')} · 加价 ¥{fmt(p.bid_increment||'10')} · 封顶 ¥{fmt(p.ceiling_price||'0')}
+              <div style={{ fontSize:13, color:'#cbd5e0' }}>
+                起拍 ¥{fmt(p.start_price||'0')} · 加价 ¥{fmt(p.bid_increment||'10')}{Number(p.ceiling_price)>0?` · 封顶 ¥${fmt(p.ceiling_price)}`:' · 上不封顶'}
               </div>
               {p.status !== 3 && p.status !== 5 && p.current_price && <div style={{ fontSize:13, color:'#fca5a5', fontWeight:600, marginTop:2 }}>当前价: ¥{fmt(p.current_price)}</div>}
               {p.final_price && <div style={{ fontSize:13, color:'#34d399', fontWeight:600, marginTop:2 }}>成交价: ¥{fmt(p.final_price)}</div>}
+              {(p as any).auction_start && <div style={{ fontSize:12, color:'#94a3b8', marginTop:2 }}>开拍: {new Date((p as any).auction_start).toLocaleString('zh-CN', {month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'})}</div>}
             </div>
             {/* Status */}
             <span style={{ padding:'3px 10px', borderRadius:20, fontSize:11, fontWeight:600, color:statusColors[p.status]||'#a0aec0', background:`${statusColors[p.status]||'#a0aec0'}18`, marginRight:12 }}>
@@ -172,7 +186,10 @@ export default function Products() {
             {/* Actions */}
             <div style={{ display:'flex', gap:6 }}>
               {p.status === 0 && <button onClick={()=>openEdit(p)} style={btnSm('#6366f1')}>修改</button>}
-              {p.status !== 5 && <button onClick={()=>handleDelete(p.id)} style={btnSm('#e53e3e')}>下架</button>}
+              {p.status === 0 && <button onClick={async()=>{await seller.updateProduct(p.id, {status:1} as any, token!); load();}} style={btnSm('#10b981')}>上架</button>}
+              {p.status === 1 && <button onClick={async()=>{await seller.updateProduct(p.id, {status:0} as any, token!); load();}} style={btnSm('#f59e0b')}>下架</button>}
+              {p.status === 3 && <button onClick={()=>handleDelete(p.id)} style={btnSm('#e53e3e')}>删除</button>}
+              {(p.status === 0 || p.status === 1) && <button onClick={()=>handleDelete(p.id)} style={btnSm('#e53e3e')}>删除</button>}
             </div>
           </div>
         ))}
@@ -196,14 +213,40 @@ export default function Products() {
             <div style={labelBase}>名称</div><input placeholder="商品名称" value={form.title} onChange={e=>setForm({...form,title:e.target.value})} style={inputBase} />
             <div style={{...labelBase, marginTop:12}}>描述</div><textarea placeholder="商品描述" value={form.description} onChange={e=>setForm({...form,description:e.target.value})} rows={3} style={{...inputBase, resize:'vertical'}} />
             <div style={{...labelBase, marginTop:12}}>图片</div>
-            <input type="file" accept="image/*" onChange={handleImageUpload} style={{ fontSize:13, marginBottom:4, color:'rgba(148,163,184,0.6)' }} />
-            {uploading && <div style={{ fontSize:12, color:'#818cf8' }}>上传中...</div>}
+            <label style={{
+              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+              padding: '10px 16px', borderRadius: 10, cursor: 'pointer',
+              background: 'rgba(255,255,255,0.04)', border: '1px dashed rgba(255,255,255,0.12)',
+              color: 'rgba(148,163,184,0.6)', fontSize: 13, transition: 'all 0.2s',
+            }}
+              onMouseEnter={e => { e.currentTarget.style.borderColor = 'rgba(99,102,241,0.4)'; e.currentTarget.style.color = '#a5b4fc'; }}
+              onMouseLeave={e => { e.currentTarget.style.borderColor = 'rgba(255,255,255,0.12)'; e.currentTarget.style.color = 'rgba(148,163,184,0.6)'; }}
+            >
+              <span style={{ fontSize: 18 }}>📷</span> {uploading ? '上传中...' : '点击选择图片'}
+              <input type="file" accept="image/*" onChange={handleImageUpload} style={{ display: 'none' }} />
+            </label>
             {(imagePreview || form.cover_image) && <img src={imagePreview||form.cover_image} alt="" style={{ width:'100%', maxHeight:180, objectFit:'contain', borderRadius:8, marginTop:8, border:'1px solid rgba(255,255,255,0.06)' }} />}
             <div style={{ display:'flex', gap:10, marginTop:12 }}>
               <div style={{ flex:1 }}><div style={labelBase}>起拍价</div><input placeholder="0" value={form.start_price} onChange={e=>setForm({...form,start_price:e.target.value})} style={inputBase} /></div>
               <div style={{ flex:1 }}><div style={labelBase}>加价幅度</div><input placeholder="10" value={form.bid_increment} onChange={e=>setForm({...form,bid_increment:e.target.value})} style={inputBase} /></div>
             </div>
-            <div style={{...labelBase, marginTop:12}}>封顶价（0=不设上限）</div><input placeholder="0" value={form.ceiling_price} onChange={e=>setForm({...form,ceiling_price:e.target.value})} style={inputBase} />
+            <div style={{...labelBase, marginTop:12}}>封顶价</div>
+            <div style={{ display:'flex', alignItems:'center', gap:10 }}>
+              <div onClick={()=>setNoCeiling(!noCeiling)} style={{ cursor:'pointer', display:'flex', alignItems:'center', gap:6, flexShrink:0 }}>
+                <div style={{
+                  width:18, height:18, borderRadius:'50%',
+                  border: noCeiling?'2px solid #818cf8':'2px solid rgba(255,255,255,0.2)',
+                  background: noCeiling?'#818cf8':'transparent',
+                  display:'flex', alignItems:'center', justifyContent:'center',
+                  transition:'all 0.2s',
+                }}>
+                  {noCeiling && <span style={{ color:'#fff', fontSize:11, fontWeight:'bold' }}>✓</span>}
+                </div>
+                <span style={{ fontSize:12, color:noCeiling?'#cbd5e0':'rgba(148,163,184,0.5)', whiteSpace:'nowrap' }}>不设封顶价</span>
+              </div>
+              <input placeholder="封顶价" value={noCeiling?'':form.ceiling_price} disabled={noCeiling}
+                onChange={e=>setForm({...form,ceiling_price:e.target.value})} style={{...inputBase, flex:1, opacity:noCeiling?0.3:1}} />
+            </div>
             <div style={{ display:'flex', gap:10, marginTop:12 }}>
               <div style={{ flex:1 }}><div style={labelBase}>竞拍时长(分钟)</div><input placeholder="5" value={duration} onChange={e=>setDuration(e.target.value)} style={inputBase} /></div>
               <div style={{ flex:1 }}><div style={labelBase}>延时(秒)</div><input placeholder="30" value={delay} onChange={e=>setDelay(e.target.value)} style={inputBase} /></div>

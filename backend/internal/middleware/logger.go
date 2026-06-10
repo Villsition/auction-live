@@ -3,7 +3,10 @@ package middleware
 import (
 	"fmt"
 	"math/rand"
+	"strconv"
 	"time"
+
+	"auction/internal/metrics"
 
 	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"
@@ -26,6 +29,12 @@ func Logger(logger *zap.Logger) gin.HandlerFunc {
 		c.Next()
 
 		cost := time.Since(start)
+
+		// Prometheus metrics
+		status := strconv.Itoa(c.Writer.Status())
+		metrics.HTTPRequests.WithLabelValues(c.Request.Method, path, status).Inc()
+		metrics.HTTPLatency.WithLabelValues(c.Request.Method, path).Observe(cost.Seconds())
+
 		logger.Info("request",
 			zap.String("req_id", reqID),
 			zap.Int("status", c.Writer.Status()),

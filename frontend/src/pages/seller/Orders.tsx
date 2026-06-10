@@ -135,12 +135,13 @@ export default function SellerOrders() {
                   <div style={{ fontWeight: 600, fontSize: 14, marginBottom: 6, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                     {order.product_title || '商品'}
                   </div>
-                  <div style={{ fontSize: 12, color: 'rgba(148,163,184,0.5)', marginBottom: 4 }}>
+                  <div style={{ fontSize: 12, color: '#94a3b8', marginBottom: 4 }}>
                     订单号: {order.order_no}
                   </div>
                   <div style={{ fontSize: 20, fontWeight: 700, color: '#e53e3e' }}>
                     ¥{fmt(order.amount)}
                   </div>
+                  {(order as any).auction_start && <div style={{ fontSize: 11, color: '#94a3b8', marginTop: 2 }}>开拍: {new Date((order as any).auction_start).toLocaleString('zh-CN', {month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'})}</div>}
                 </div>
 
                 {/* Buyer */}

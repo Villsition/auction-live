@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"sync"
 
+	"auction/internal/metrics"
 	redisPkg "auction/pkg/redis"
 
 	"go.uber.org/zap"
@@ -30,8 +31,8 @@ func NewHub(rdb, rdbRead *redisPkg.Client, logger *zap.Logger) *Hub {
 		rooms:       make(map[uint64]map[*Client]struct{}),
 		auctionRoom: make(map[uint64]uint64),
 		userRoom:    make(map[uint64]uint64),
-		register:    make(chan *Client, 512),
-		unregister:  make(chan *Client, 512),
+		register:    make(chan *Client, 2048),
+		unregister:  make(chan *Client, 2048),
 		rdb:         rdb,
 		rdbRead:     rdbRead,
 		logger:      logger,
@@ -54,12 +55,22 @@ func (h *Hub) handleJoin(client *Client) {
 	key := fmt.Sprintf(viewersKey, client.roomID)
 
 	h.mu.Lock()
+	// Remove any stale connections from the same user (from previous page refreshes)
+	for _, clients := range h.rooms {
+		for old := range clients {
+			if old.userID == client.userID && old != client {
+				delete(clients, old)
+			}
+		}
+	}
 	if h.rooms[client.roomID] == nil {
 		h.rooms[client.roomID] = make(map[*Client]struct{})
 	}
 	h.rooms[client.roomID][client] = struct{}{}
 	h.userRoom[client.userID] = client.roomID
 	h.mu.Unlock()
+
+	metrics.WSConnections.Inc()
 
 	h.rdb.SAdd(ctx, key, client.userID)
 	count, _ := h.rdb.SCard(ctx, key).Result()
@@ -107,6 +118,8 @@ func (h *Hub) handleLeave(client *Client) {
 		delete(h.userRoom, client.userID)
 	}
 	h.mu.Unlock()
+
+	metrics.WSConnections.Dec()
 
 	h.rdb.SRem(ctx, key, client.userID)
 	count, _ := h.rdb.SCard(ctx, key).Result()

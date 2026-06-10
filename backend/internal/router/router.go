@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"go.uber.org/zap"
 	"gorm.io/gorm"
 )
@@ -28,6 +29,7 @@ type Handlers struct {
 	Comment         *handler.CommentHandler
 	Like            *handler.LikeHandler
 	WS              *handler.WSHandler
+	Health          *handler.HealthHandler
 }
 
 func NewRouter(h *Handlers, logger *zap.Logger, jwtSecret string, db *gorm.DB) *gin.Engine {
@@ -39,9 +41,10 @@ func NewRouter(h *Handlers, logger *zap.Logger, jwtSecret string, db *gorm.DB) *
 
 	r.Static("/static/upload", "./static/upload")
 
-	r.GET("/api/health", func(c *gin.Context) {
-		response.Success(c, gin.H{"status": "ok"})
-	})
+	r.GET("/api/health", h.Health.Check)
+
+	// Prometheus metrics
+	r.GET("/metrics", gin.WrapH(promhttp.Handler()))
 
 	// Server time for client clock calibration (Unix ms)
 	r.GET("/api/server-time", func(c *gin.Context) {
@@ -82,6 +85,7 @@ func NewRouter(h *Handlers, logger *zap.Logger, jwtSecret string, db *gorm.DB) *
 		authRequired.GET("/users/:id", h.User.GetByID)
 		authRequired.PUT("/users/:id", h.User.Update)
 		authRequired.POST("/upload/image", h.Seller.UploadImage)
+		authRequired.POST("/upload/video", h.Seller.UploadVideo)
 
 		authRequired.POST("/bids", h.Bid.Create)
 		authRequired.GET("/bids/mine", h.Buyer.ListMyBids)

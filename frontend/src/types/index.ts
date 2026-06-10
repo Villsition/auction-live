@@ -27,6 +27,8 @@ export interface LiveRoom {
   title: string;
   cover_image: string;
   stream_url: string;
+  pull_url?: string;
+  bg_video?: string;
   status: number; // 0=offline 1=live 2=ended
   online_count: number;
   total_likes?: number;
@@ -74,6 +76,7 @@ export interface ProductWithAuction extends Product {
   current_price?: string;
   final_price?: string;
   bid_count?: number;
+  auction_start?: string;
 }
 
 export interface RoomAuction {
@@ -176,6 +179,7 @@ export interface WSBidEvent {
   delay_extend: boolean;
   final_delay: boolean;
   new_end_time_ms: number;
+  server_time_ms?: number;
 }
 
 export interface WSAuctionEvent {
@@ -183,6 +187,8 @@ export interface WSAuctionEvent {
   auction_id: number;
   status: string;
   winner_id?: number;
+  winner_name?: string;
+  winner_avatar?: string;
   final_price?: string;
   message: string;
 }

@@ -6,3 +6,4 @@ dist/
 
 # Vite cache
 .vite/
+public/video/

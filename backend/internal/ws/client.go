@@ -34,7 +34,7 @@ func NewClient(hub *Hub, conn *websocket.Conn, userID, roomID uint64, nickname, 
 	return &Client{
 		hub:      hub,
 		conn:     conn,
-		send:     make(chan []byte, 1024),
+		send:     make(chan []byte, 2048),
 		userID:   userID,
 		roomID:   roomID,
 		nickname: nickname,

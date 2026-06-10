@@ -19,6 +19,7 @@ type AuctionWatcher struct {
 	auctionRepo *repository.AuctionSessionRepo
 	bidRepo     *repository.BidRepo
 	orderRepo   *repository.OrderRepo
+	userRepo    *repository.UserRepo
 	notifSvc    *service.NotificationSvc
 	hub         *ws.Hub
 	logger      *zap.Logger
@@ -37,6 +38,7 @@ func NewAuctionWatcher(
 	auctionRepo *repository.AuctionSessionRepo,
 	bidRepo *repository.BidRepo,
 	orderRepo *repository.OrderRepo,
+	userRepo *repository.UserRepo,
 	notifSvc *service.NotificationSvc,
 	hub *ws.Hub,
 	logger *zap.Logger,
@@ -46,6 +48,7 @@ func NewAuctionWatcher(
 		auctionRepo: auctionRepo,
 		bidRepo:     bidRepo,
 		orderRepo:   orderRepo,
+		userRepo:    userRepo,
 		notifSvc:    notifSvc,
 		hub:         hub,
 		logger:      logger,
@@ -58,6 +61,12 @@ func (w *AuctionWatcher) Start() {
 	w.logger.Info("auction watcher started")
 
 	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				w.logger.Error("watcher panicked, restarting", zap.Any("panic", r))
+				go w.Start() // restart
+			}
+		}()
 		tickN := 0
 		for {
 			select {
@@ -256,13 +265,24 @@ func (w *AuctionWatcher) finalize(ctx context.Context, auctionID uint64) {
 
 	w.bidRepo.FlushAuctionCache(ctx, auctionID)
 
+	// Look up winner user info (names may be missing from bid fallback records)
+	winnerName := winningBid.Nickname
+	winnerAvatar := winningBid.Avatar
+	if winnerName == "" {
+		if u, err := w.userRepo.GetByID(ctx, winner.UserID); err == nil && u != nil {
+			winnerName = u.Nickname
+			winnerAvatar = u.Avatar
+		}
+	}
 	w.hub.BroadcastToAuction(auctionID, &ws.AuctionEvent{
-		Type:       ws.EventAuctionEnd,
-		AuctionID:  auctionID,
-		Status:     "sold",
-		WinnerID:   winner.UserID,
-		FinalPrice: currentPrice,
-		Message:    "竞拍成交",
+		Type:         ws.EventAuctionEnd,
+		AuctionID:    auctionID,
+		Status:       "sold",
+		WinnerID:     winner.UserID,
+		WinnerName:   winnerName,
+		WinnerAvatar: winnerAvatar,
+		FinalPrice:   currentPrice,
+		Message:      "竞拍成交",
 	})
 	w.hub.RemoveAuctionRoom(auctionID)
 }

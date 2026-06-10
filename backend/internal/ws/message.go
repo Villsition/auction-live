@@ -23,17 +23,20 @@ type BidEvent struct {
 	Rank        int64  `json:"rank"`
 	BidCount    int64  `json:"bid_count"`
 	CeilingDeal bool  `json:"ceiling_deal"`
-	DelayExtend bool  `json:"delay_extend"`
-	FinalDelay  bool  `json:"final_delay"`                 // true on 5th (last) extension
-	NewEndTime  int64 `json:"new_end_time_ms,omitempty"`   // Unix ms
+	DelayExtend  bool  `json:"delay_extend"`
+	FinalDelay   bool  `json:"final_delay"`                 // true on 5th (last) extension
+	NewEndTime   int64 `json:"new_end_time_ms,omitempty"`   // Unix ms
+	ServerTimeMs int64 `json:"server_time_ms,omitempty"`    // Server Unix ms at bid time
 }
 
 type AuctionEvent struct {
 	Type       string `json:"type"`
 	AuctionID  uint64 `json:"auction_id"`
 	Status     string `json:"status"`
-	WinnerID   uint64 `json:"winner_id,omitempty"`
-	FinalPrice string `json:"final_price,omitempty"`
+	WinnerID     uint64 `json:"winner_id,omitempty"`
+	WinnerName   string `json:"winner_name,omitempty"`
+	WinnerAvatar string `json:"winner_avatar,omitempty"`
+	FinalPrice   string `json:"final_price,omitempty"`
 	Message    string `json:"message"`
 }
 

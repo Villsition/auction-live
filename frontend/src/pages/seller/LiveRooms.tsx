@@ -10,11 +10,22 @@ export default function SellerLiveRooms() {
   const [rooms, setRooms] = useState<LiveRoom[]>([]);
   const [loading, setLoading] = useState(true);
   const [showCreate, setShowCreate] = useState(false);
-  const [form, setForm] = useState({ title: '', cover_image: '', stream_url: '' });
+  const [form, setForm] = useState({ title: '', cover_image: '', stream_url: '', bg_video: '' });
+  const [uploadingBg, setUploadingBg] = useState(false);
 
   // Start modal state
   const [startRoom, setStartRoom] = useState<LiveRoom | null>(null);
   const [startTitle, setStartTitle] = useState('');
+
+  const handleBgVideoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]; if (!file || !token) return;
+    setUploadingBg(true);
+    try {
+      const url = await sellerApi.uploadVideo(file, token);
+      setForm({ ...form, bg_video: url });
+    } catch (err: any) { alert('视频上传失败: ' + err.message); }
+    setUploadingBg(false);
+  };
 
   const load = async () => {
     if (!token) return;
@@ -32,7 +43,7 @@ export default function SellerLiveRooms() {
     try {
       await sellerApi.createRoom(form, token);
       setShowCreate(false);
-      setForm({ title: '', cover_image: '', stream_url: '' });
+      setForm({ title: '', cover_image: '', stream_url: '', bg_video: '' });
       load();
     } catch (err: any) { alert(err.message); }
   };
@@ -117,13 +128,22 @@ export default function SellerLiveRooms() {
                     ID: {room.id} · 在线: {room.online_count || 0} 人 · 点赞: {room.total_likes || 0}
                   </div>
                 </div>
-                <span style={{
-                  padding: '4px 12px', borderRadius: 20, fontSize: 12, fontWeight: 'bold',
-                  background: st.color === '#e53e3e' ? '#fff5f5' : '#f7fafc',
-                  color: st.color, marginRight: 12,
-                }}>
-                  {st.label}
-                </span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <span style={{
+                    padding: '4px 12px', borderRadius: 20, fontSize: 12, fontWeight: 'bold',
+                    background: st.color === '#e53e3e' ? '#fff5f5' : '#f7fafc',
+                    color: st.color, marginRight: 4,
+                  }}>
+                    {st.label}
+                  </span>
+                  {room.status === 1 && room.stream_url && (
+                    <code style={{
+                      fontSize: 11, color: '#6366f1', background: '#eef2ff',
+                      padding: '3px 8px', borderRadius: 6, maxWidth: 240,
+                      overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                    }} title={room.stream_url}>{room.stream_url}</code>
+                  )}
+                </div>
                 <div style={{ display: 'flex', gap: 8 }}>
                   {(room.status === 0 || room.status === 2) && (
                     <button onClick={() => handleStartClick(room)}
@@ -154,6 +174,12 @@ export default function SellerLiveRooms() {
             <input placeholder="推流地址（可选）" value={form.stream_url}
               onChange={e => setForm({ ...form, stream_url: e.target.value })}
               style={inputStyle} />
+            <div style={{ marginTop: 10, display: 'flex', alignItems: 'center', gap: 8 }}>
+              <label style={{ ...inputStyle, cursor: 'pointer', textAlign: 'center', color: uploadingBg ? '#a0aec0' : '#3182ce', marginTop: 0 }}>
+                {uploadingBg ? '上传中...' : form.bg_video ? '✅ 已选背景视频' : '📹 上传背景视频（可选）'}
+                <input type="file" accept="video/mp4,video/webm" onChange={handleBgVideoUpload} style={{ display: 'none' }} />
+              </label>
+            </div>
             <div style={{ display: 'flex', gap: 8, marginTop: 16 }}>
               <button onClick={handleCreate}
                 style={{ flex: 1, padding: 10, background: '#3182ce', color: '#fff', border: 'none', borderRadius: 6, cursor: 'pointer', fontSize: 14 }}>

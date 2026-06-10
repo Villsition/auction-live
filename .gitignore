@@ -17,6 +17,9 @@ Thumbs.db
 .env.local
 .env.*.local
 
+# Database dumps
+dump.rdb
+
 # Claude
 .claude/settings.local.json
 CLAUDE.md
